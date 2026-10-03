@@ -24,7 +24,7 @@ import pandas as pd
 import shapely
 from shapely.geometry import LineString, MultiPoint, mapping
 
-from engine.profiles import PROFILES, merge_profiles
+from engine.profiles import PROFILES, merge_profiles, profile_speed
 from pipeline.common import load_config, out_dir, raw_dir, write_geojson
 
 # ---------- stale ----------
@@ -384,6 +384,9 @@ class Net:
             "wyspy_dostepnosci": len(islands), "odciete_wezly_pct": cut_pct,
         }
         v = View(prof["label"], list(keys), mode, G, status, notes, set(main), stats)
+        if len(self._views) > 48:      # profile wlasne moga sie mnozyc - trzymamy ograniczony cache
+            for k_ in [k_ for k_ in self._views if any(str(x).startswith("wlasne_") for x in k_[0])][:16]:
+                self._views.pop(k_, None)
         self._views[ck] = v
         return v
 
@@ -495,9 +498,12 @@ class Net:
                 if n not in g["notes"]:
                     g["notes"].append(n)
         steps = []
+        cum = 0.0
         for g in groups:
             name, kind = g["key"]
             m = round(g["length"])
+            start_m = round(cum)
+            cum += g["length"]
             if kind == "schody":
                 text = f"Schody{' - ' + name if name else ''}, {m} m"
             elif kind == "przejscie":
@@ -510,16 +516,29 @@ class Net:
                 text = "PRZESZKODA: " + text
             elif g["status"] == 1:
                 text = "UWAGA (dane niepełne): " + text
-            steps.append({"text": text, "length_m": m, "status": g["status"], "notes": [str(n) for n in g["notes"]]})
+            steps.append({"text": text, "length_m": m, "status": g["status"], "notes": [str(n) for n in g["notes"]],
+                          "name": name, "kind": kind, "start_m": start_m})
         total = sum(leg["length"] for leg in legs)
         unc = sum(leg["length"] for leg, st in zip(legs, st_ev) if st == 1)
         blk = sum(leg["length"] for leg, st in zip(legs, st_ev) if st == 2)
-        speed = min([SPEED_KMH.get(k, BASE_SPEED_KMH) for k in keys]) if keys else BASE_SPEED_KMH
+        speed = min([profile_speed(k, BASE_SPEED_KMH, SPEED_KMH) for k in keys]) if keys else BASE_SPEED_KMH
         rd = [self.edges[leg["idx"]]["rest_dist"] for leg in legs if self.edges[leg["idx"]].get("rest_dist") is not None]
         hazards = self._hazards(legs, ev)
         counts = {k: sum(1 for h in hazards if h["severity"] == k) for k in self.HAZARD_SEV_ORDER}
-        narration = [{"at_m": h["at_m"], "announce_at_m": max(0, h["at_m"] - 30), "lon": h["lon"], "lat": h["lat"],
-                      "text": h["spoken"], "severity": h["severity"], "hazard_id": h["id"]} for h in hazards]
+        narration, by_pos = [], {}
+        for h in hazards:      # kilka zagrozen w tym samym miejscu (np. kostka + brak danych o krawezniku) = jeden komunikat
+            g = by_pos.get(h["at_m"])
+            if g is None:
+                g = {"at_m": h["at_m"], "announce_at_m": max(0, h["at_m"] - 30), "lon": h["lon"], "lat": h["lat"],
+                     "text": h["spoken"], "severity": h["severity"], "hazard_id": h["id"], "hazard_ids": [h["id"]]}
+                by_pos[h["at_m"]] = g
+                narration.append(g)
+            else:
+                low = h["spoken"][:1].lower() + h["spoken"][1:]
+                g["text"] += "; " + low
+                g["hazard_ids"].append(h["id"])
+                if self.HAZARD_SEV_ORDER[h["severity"]] < self.HAZARD_SEV_ORDER[g["severity"]]:
+                    g["severity"] = h["severity"]
         return {
             "max_do_lawki_m": round(max(rd)) if rd else None, "lawki_w_danych": self.rest_count,
             "profile": ev.label, "mode": mode, "length_m": round(total),
@@ -564,6 +583,31 @@ class Net:
             r["recommended"] = False
         return res
 
+    # ---------- zasieg pieszy: odleglosc SIECIA (nie w linii prostej) do wielu punktow ----------
+    def walk_distances(self, origin: tuple, targets: list, keys: list, mode: str = "warn", cutoff_m: float = 1500,
+                       max_snap_m: float = 60) -> list:
+        """targets = [(lon, lat), ...]. Zwraca liste (indeks_celu, odleglosc_m_po_sieci) dla celow osiagalnych w cutoff_m,
+        wg ograniczen profilu (zablokowane odcinki sa pomijane). Cel dalej niz max_snap_m od sieci jest pomijany."""
+        v = self.view(keys, mode)
+        if not v.main or not targets:
+            return []
+        s = self.nearest(*origin, v.main)
+        dist = nx.single_source_dijkstra_path_length(v.G, s, cutoff=cutoff_m, weight="length")
+        ids = np.fromiter(dist.keys(), dtype=np.int64)
+        xs = np.array([self.xy[i][0] for i in ids])
+        ys = np.array([self.xy[i][1] for i in ids])
+        d0 = np.array([dist[i] for i in ids])
+        out = []
+        for k, (lon, lat) in enumerate(targets):
+            dx = (xs - lon) * 111_320 * math.cos(math.radians(lat))
+            dy = (ys - lat) * 110_540
+            snap = np.hypot(dx, dy)
+            tot = np.where(snap <= max_snap_m, d0 + snap, np.inf)   # tylko wezly blisko obiektu
+            j = int(np.argmin(tot))
+            if tot[j] <= cutoff_m:
+                out.append((k, float(tot[j])))
+        return out
+
     # ---------- izochrona ----------
     def isochrone(self, origin: tuple, keys: list, minutes: float = 15, mode: str = "warn",
                   equal_speed: bool = True):
@@ -576,7 +620,7 @@ class Net:
         if equal_speed or not keys:
             speed = BASE_SPEED_KMH
         else:
-            speed = min(SPEED_KMH.get(k, BASE_SPEED_KMH) for k in keys)
+            speed = min(profile_speed(k, BASE_SPEED_KMH, SPEED_KMH) for k in keys)
         limit = minutes / 60 * speed * 1000
         dist = nx.single_source_dijkstra_path_length(v.G, s, cutoff=limit + 0.5, weight="length")  # +0.5 m: tolerancja zaokraglen
         pts = [self.xy[n] for n in dist]

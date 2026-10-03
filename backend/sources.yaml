@@ -119,6 +119,19 @@ used:
     verification: "Zawsze oznaczone jako niezweryfikowane (pewność 0,3), pokazywane osobno od innych źródeł. Ograniczenie liczby zgłoszeń (10 na godzinę z jednego adresu), czyszczenie treści. Sprzeczność ze źródłem = status „sprzeczne”."
     limitations: "Możliwe nadużycia; weryfikacja (potwierdzenie przez właściciela lub kolejnych użytkowników) to kolejny etap."
     retrieved_from_file: null
+  - id: surveys
+    name: "Naloty dronem i kontrole terenowe (własne dane projektu)"
+    publisher: "Zespół projektu / wykonawca nalotu"
+    url: null
+    used_for: "Data ostatniego sprawdzenia terenu oraz obserwacje z góry: zastawione chodniki, remonty, zniszczona nawierzchnia, wąski chodnik (surveys.yaml, data/raw/survey_observations.json)"
+    license: "Własne dane projektu; zasady udostępniania do ustalenia z wykonawcą nalotu i zleceniodawcą."
+    license_status: do_potwierdzenia
+    attribution: "Nalot dronem / kontrola terenowa: data w aplikacji"
+    commercial_use: "Własne dane projektu. W repozytorium jest tylko wpis PRZYKŁADOWY (demo: true), oznaczony tak w aplikacji; prawdziwe loty wymagają sprawdzenia przepisów i zgód (BIZNES.md, sekcja 5)."
+    currency: "Cel: co 3 miesiące (interval_months). Dane starsze niż interwał są oznaczane jako nieświeże."
+    verification: "Obserwacja z lotu to stan z dnia nalotu (nie fakt o dostępności miejsca); nie zmienia wyboru trasy, tylko dodaje ostrzeżenie z datą. Aplikacja pokazuje, czego nalot nie obejmuje (szerokość drzwi, stopnie pod zadaszeniem, wnętrza)."
+    limitations: "Dron nie widzi szerokości drzwi, stopni pod zadaszeniem, wnętrz ani niskich krawężników. Zdjęcia nie są publikowane (twarze, tablice rejestracyjne); w API są tylko punkty z typem."
+    retrieved_from_file: null
 considered_not_used:
   - name: "Portal Otwarte Dane Krakowa i ArcGIS Hub ZTP"
     url: https://otwartedane.um.krakow.pl
