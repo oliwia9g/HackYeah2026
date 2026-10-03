@@ -101,3 +101,34 @@ def write_geojson(gdf, path: Path) -> None:
     gdf = clean_for_geojson(gdf)
     gdf.to_file(path, driver="GeoJSON")
     print(f"zapisano {path} ({len(gdf)} obiektów)")
+
+
+OVERPASS_BASES = [   # adresy bazowe dla osmnx (bez /interpreter)
+    "https://overpass-api.de/api",
+    "https://overpass.private.coffee/api",
+    "https://overpass.kumi.systems/api",
+    "https://maps.mail.ru/osm/tools/overpass/api",
+]
+
+
+def with_overpass_fallback(fn, *args, rounds: int = 3, **kwargs):
+    """Wywoluje funkcje osmnx; przy bledzie (504, 429, timeout) probuje kolejnych serwerow Overpass, potem czeka i powtarza.
+    Cache osmnx sprawia, ze to, co sie juz pobralo, nie jest pytane drugi raz."""
+    import time
+    import osmnx as ox
+    last = None
+    for rnd in range(rounds):
+        for base in OVERPASS_BASES:
+            ox.settings.overpass_url = base
+            try:
+                print(f"  serwer: {base}")
+                return fn(*args, **kwargs)
+            except Exception as e:   # HTTP 429/504, timeout, uciete polaczenie
+                last = e
+                print(f"    blad: {str(e)[:160]}")
+                time.sleep(3)
+        if rnd < rounds - 1:
+            wait = 30 * (rnd + 1)
+            print(f"  wszystkie serwery zajete, czekam {wait} s...")
+            time.sleep(wait)
+    raise RuntimeError(f"Overpass niedostepny po {rounds} rundach: {last}")
