@@ -1,10 +1,12 @@
-# Obszar demo: Stare Miasto + Kazimierz + okolice Dworca Głównego
-# Kolejność jak w osmnx 2.x: (left=west, bottom=south, right=east, top=north)
-bbox:
-  west: 19.924
-  south: 50.046
-  east: 19.962
-  north: 50.073
+# Obszar demo (AOI): wielokat z pliku. Skrypty pobieraja dane TYLKO z jego wnetrza.
+# Zeby zmienic obszar, podmien plik (GeoJSON, dowolny CRS zapisany w pliku, np. EPSG:2180) i uruchom pipeline od nowa.
+# "bbox" jest wyliczany automatycznie z AOI (prostokat otaczajacy); reczny bbox dziala tylko, gdy nie ma klucza aoi.
+aoi: aoi/AOI_srodmiescie.geojson   # obreb Krakow-Srodmiescie (ok. 17,8 km2)
+# bbox:
+#   west: 19.924
+#   south: 50.046
+#   east: 19.962
+#   north: 50.073
 
 city_name: Kraków
 crs_metric: "EPSG:2180"   # PL-1992, do liczenia długości i nachyleń w metrach

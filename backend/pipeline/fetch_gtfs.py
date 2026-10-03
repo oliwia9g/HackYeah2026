@@ -2,10 +2,6 @@
 
 Wynik: raw/transit.json (do silnika/API) oraz public/data/transit_stops.geojson (warstwa dla frontu).
 
-Uruchomienie (z katalogu backend/):
-    python -m pipeline.fetch_gtfs                       # pobiera tramwaje i autobusy
-    python -m pipeline.fetch_gtfs --file tram.zip --file bus.zip   # z plikow pobranych recznie
-
 Zasady:
 - wheelchair_boarding / wheelchair_accessible: 1 = tak, 2 = nie, 0 lub puste = BRAK DANYCH (nigdy "dostepne").
 - To dane z ROZKLADU JAZDY, nie z pozycji pojazdow na zywo.
@@ -22,7 +18,7 @@ from datetime import date
 import pandas as pd
 import requests
 
-from pipeline.common import bbox_tuple, load_config, out_dir, raw_dir, write_geojson
+from pipeline.common import bbox_tuple, load_aoi, load_config, out_dir, raw_dir, write_geojson
 
 URLS = {
     "tramwaj": "https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip",
@@ -64,8 +60,8 @@ def _secs(t: str) -> int | None:
         return None
 
 
-def build(zips: list[tuple[str, zipfile.ZipFile]], bbox: tuple) -> dict:
-    """zips: [(etykieta, ZipFile)]. bbox: (left, bottom, right, top)."""
+def build(zips: list[tuple[str, zipfile.ZipFile]], bbox: tuple, aoi=None) -> dict:
+    """zips: [(etykieta, ZipFile)]. bbox: (left, bottom, right, top). aoi: wielokat (shapely) - dokladniejszy filtr."""
     left, bottom, right, top = bbox
     stops_out, deps_out, services, exceptions, trips_out = {}, [], {}, {}, {}
     for label, z in zips:
@@ -75,6 +71,9 @@ def build(zips: list[tuple[str, zipfile.ZipFile]], bbox: tuple) -> dict:
         stops["lon"] = pd.to_numeric(stops["stop_lon"], errors="coerce")
         stops["lat"] = pd.to_numeric(stops["stop_lat"], errors="coerce")
         inb = stops[(stops.lon >= left) & (stops.lon <= right) & (stops.lat >= bottom) & (stops.lat <= top)]
+        if aoi is not None and not inb.empty:
+            import shapely
+            inb = inb[shapely.contains_xy(aoi, inb["lon"].to_numpy(), inb["lat"].to_numpy())]
         if inb.empty:
             continue
         ids = set(inb["stop_id"])
@@ -156,7 +155,7 @@ def main() -> None:
               "i uruchom z --file.")
         sys.exit(1)
 
-    data = build(zips, bbox_tuple(cfg))
+    data = build(zips, bbox_tuple(cfg), load_aoi(cfg))
     raw = raw_dir(cfg)
     (raw / "transit.json").write_text(json.dumps(data, ensure_ascii=False), "utf-8")
 

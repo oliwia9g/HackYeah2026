@@ -1,5 +1,7 @@
 """Komunikacja miejska z rozkladu GTFS: przystanki w poblizu i najblizsze odjazdy.
 
+Uwaga (zgodnie z zasadami projektu): to ROZKLAD JAZDY, nie pozycje pojazdow na zywo.
+Brak informacji o niskiej podlodze = "brak danych", nigdy "dostepne".
 """
 from __future__ import annotations
 
@@ -8,8 +10,10 @@ import math
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from engine.fleet import OK, vehicle_access
+
 NOTE = "Dane z rozkładu jazdy ZTP, nie czas rzeczywisty. Kursy mogą się opóźnić lub zmienić."
-WC_TEXT = {"yes": "niskopodłogowy / dostępny", "no": "niedostępny dla wózka",
+WC_TEXT = {"yes": "niskopodłogowy / dostępny", "likely": "prawdopodobnie dostępny", "no": "niedostępny dla wózka",
            "unknown": "brak danych o dostępności"}
 
 
@@ -74,7 +78,9 @@ class Transit:
         for offset in (-1, 0, 1):   # wczorajszy rozklad (kursy po polnocy), dzisiejszy, jutrzejszy
             day = (now + timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
             for sid, sec, line, head, wc, svc in self.by_stop.get(stop_id, []):
-                if only_accessible and wc != "yes":
+                if stop_id.startswith("autobus:") and wc == "unknown":
+                    wc = "likely"   # deklaracja MPK (wszystkie autobusy niskopodlogowe od 2018); nie "yes"
+                if only_accessible and wc not in OK:
                     continue
                 t = day + timedelta(seconds=sec)
                 if t < now or not self._active(svc, day):
@@ -82,7 +88,8 @@ class Transit:
                 out.append((t, line, head, wc))
         out.sort(key=lambda x: x[0])
         return [{"time": t.strftime("%H:%M"), "date": t.strftime("%Y-%m-%d"), "in_min": max(0, int((t - now).total_seconds() // 60)),
-                 "line": line, "headsign": head, "wheelchair": wc, "wheelchair_text": WC_TEXT[wc]}
+                 "line": line, "headsign": head, "wheelchair": wc, "wheelchair_text": WC_TEXT[wc],
+                 "wheelchair_basis": "deklaracja MPK Kraków (flota niskopodłogowa od 2018 r.), nie sprawdzenie pojazdu" if wc == "likely" else None}
                 for t, line, head, wc in out[:n]]
 
     def nearby_with_departures(self, lon: float, lat: float, now: datetime, radius_m: float = 400,
@@ -98,9 +105,10 @@ class Transit:
                           "departures": self.departures(s["id"], now, n, only_accessible)})
         acc_note = None
         if not self.has_accessibility_data:
-            acc_note = ("Operator (ZTP Kraków) nie publikuje w rozkładzie informacji o niskiej podłodze ani o "
-                        "dostępności przystanków. Brak danych nie oznacza, że pojazd lub przystanek jest dostępny - "
-                        "sprawdź u przewoźnika.")
+            acc_note = ("W rozkładzie jazdy ZTP nie ma informacji o niskiej podłodze ani o dostępności przystanków. "
+                        "Autobusy: wg MPK Kraków od 2018 r. cała flota jest niskopodłogowa - oznaczamy je jako „prawdopodobnie dostępne” "
+                        "(deklaracja przewoźnika, nie sprawdzenie pojazdu). Tramwaje: dostępność pojazdu pojawia się dopiero w danych na żywo (pole live). "
+                        "Dostępność pojazdu to nie dostępność przystanku. Brak danych nie oznacza dostępności.")
         return {"stops": stops, "note": NOTE, "accessibility_note": acc_note, "accessibility_data_in_feed": self.has_accessibility_data, "source": self.meta.get("source"),
                 "source_url": self.meta.get("source_url"), "license": self.meta.get("license"),
                 "data_date": self.meta.get("generated_at"), "only_accessible": only_accessible,
