@@ -1,56 +1,75 @@
 import React, { useState } from "react";
-import Map from "../components/Map"; // Jeśli plik Map.jsx jest w innym folderze, dostosuj ścieżkę
+import Map from "../components/Map";
 
 export default function MapPage() {
   const [points, setPoints] = useState({ pointA: null, pointB: null });
+  const [routeData, setRouteData] = useState(null); // Tutaj zapisujemy trasę z API
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   const handlePlanRoute = async () => {
     if (!points.pointA || !points.pointB) return;
 
-    setLoading(true);
-    setStatusMessage("");
+    // 1. Odczytanie profilu z localStorage
+    let profile = "wozek_inwalidzki";
+    const savedProfile = localStorage.getItem("userAccessibilityProfile");
+    if (savedProfile) {
+      try {
+        profile = JSON.parse(savedProfile);
+      } catch (err) {
+        profile = savedProfile;
+      }
+    }
 
-    // Podgląd danych w konsoli deweloperskiej (F12)
-    console.log("Punkty gotowe do wysłania do API:", {
-      start: points.pointA,
-      end: points.pointB,
+    // 2. Zapytanie do backendu
+    const params = new URLSearchParams({
+      from_lon: points.pointA.lng,
+      from_lat: points.pointA.lat,
+      to_lon: points.pointB.lng,
+      to_lat: points.pointB.lat,
+      profiles: profile,
+      mode: "warn",
     });
 
-    // --- SYMULACJA API (na czas tworzenia backendu) ---
-    setTimeout(() => {
-      setLoading(false);
-      setStatusMessage("Punkty zostały zapisane! Otwórz konsolę (F12), aby zobaczyć obiekt.");
-    }, 800);
+    const apiUrl = `https://cuddly-space-journey-g49vpw47wqwhw7rp-8000.app.github.dev/api/route?${params.toString()}`;
 
-    /*
-    Gdy backend będzie gotowy, podmień powyższy setTimeout na:
+    setLoading(true);
+    setStatusMessage("Wyznaczanie trasy...");
 
     try {
-      const res = await fetch("http://localhost:5000/api/route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          start: points.pointA,
-          end: points.pointB,
-        }),
-      });
-      const data = await res.json();
+      const response = await fetch(apiUrl);
+      if (!response.ok) {
+        throw new Error(`Błąd HTTP: ${response.status}`);
+      }
+
+      const data = await response.json();
       console.log("Odpowiedź API:", data);
-    } catch (err) {
-      console.error("Błąd połączenia z API:", err);
+
+      // 3. Wyciągnięcie geometrii z odpowiedzi API
+      const routeGeometry =
+        data.route?.geometry ||
+        data.route ||
+        data.routes?.[0]?.geometry ||
+        data.routes?.[0] ||
+        data.geometry ||
+        data.geojson ||
+        data.features?.[0]?.geometry ||
+        data;
+
+      setRouteData(routeGeometry);
+      setStatusMessage("Trasa wyznaczona!");
+    } catch (error) {
+      console.error("Błąd trasy:", error);
+      setStatusMessage(`Wystąpił błąd: ${error.message}`);
     } finally {
       setLoading(false);
     }
-    */
   };
 
   const isReady = points.pointA && points.pointB;
 
   return (
     <div style={{ padding: "16px" }}>
-      {/* Pasek akcji i podpowiedzi */}
       <div style={{ marginBottom: "12px", display: "flex", alignItems: "center", gap: "12px" }}>
         <button
           onClick={handlePlanRoute}
@@ -66,16 +85,15 @@ export default function MapPage() {
         </button>
 
         <span style={{ fontSize: "14px" }}>
-          {!points.pointA && "Kliknij na mapie punkt początkowy (A)."}
-          {points.pointA && !points.pointB && "Kliknij na mapie punkt docelowy (B)."}
-          {isReady && !loading && !statusMessage && "Oba punkty wybrane. Kliknij „Planuj trasę”."}
+          {!points.pointA && "Kliknij punkt startowy na mapie."}
+          {points.pointA && !points.pointB && "Kliknij punkt docelowy na mapie."}
+          {isReady && !loading && !statusMessage && "Oba punkty wybrane! Kliknij „Planuj trasę”."}
           {statusMessage && statusMessage}
         </span>
       </div>
 
-      {/* Kontener mapy - musi mieć zdefiniowaną wysokość */}
       <div style={{ width: "100%", height: "600px" }}>
-        <Map onPointsChange={setPoints} />
+        <Map onPointsChange={setPoints} routeData={routeData} />
       </div>
     </div>
   );

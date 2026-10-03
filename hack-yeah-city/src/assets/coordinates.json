@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Przykładowa trasa"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [21.0122, 52.2297],
+          [21.0150, 52.2320],
+          [21.0200, 52.2350],
+          [21.0250, 52.2380]
+        ]
+      }
+    }
+  ]
+}

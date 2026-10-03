@@ -3,14 +3,22 @@ import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 export default function Map({
-  initialLng = 21.0122,
-  initialLat = 52.2297,
-  initialZoom = 12,
+  initialLng = 19.94,
+  initialLat = 50.06,
+  initialZoom = 13,
   onPointsChange,
+  routeData = null, // GeoJSON z trasą z API
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const stateRef = useRef({ pointA: null, pointB: null, markerA: null, markerB: null });
+  
+  // POPRAWKA 1: Utrzymanie aktualnej referencji do onPointsChange bez wyzwalania re-renderów mapy
+  const onPointsChangeRef = useRef(onPointsChange);
+
+  useEffect(() => {
+    onPointsChangeRef.current = onPointsChange;
+  }, [onPointsChange]);
 
   useEffect(() => {
     if (mapRef.current) return;
@@ -48,31 +56,38 @@ export default function Map({
       const coords = { lng: e.lngLat.lng, lat: e.lngLat.lat };
       const current = stateRef.current;
 
-      // 1. Pierwsze kliknięcie (lub resetowanie po wcześniejszej parze)
+      // 1. Pierwsze kliknięcie (lub reset po poprzedniej parze)
       if (!current.pointA || (current.pointA && current.pointB)) {
         current.markerA?.remove();
         current.markerB?.remove();
         current.markerB = null;
 
-        current.markerA = new maplibregl.Marker({ color: "#10b981" }) // zielony marker (start)
+        if (map.getLayer("route-layer")) {
+          map.removeLayer("route-layer");
+        }
+        if (map.getSource("route-source")) {
+          map.removeSource("route-source");
+        }
+
+        current.markerA = new maplibregl.Marker({ color: "#10b981" })
           .setLngLat([coords.lng, coords.lat])
           .addTo(map);
 
         current.pointA = coords;
         current.pointB = null;
-      } 
-      // 2. Drugie kliknięcie (zapis celu)
+      }
+      // 2. Drugie kliknięcie
       else if (current.pointA && !current.pointB) {
-        current.markerB = new maplibregl.Marker({ color: "#ef4444" }) // czerwony marker (koniec)
+        current.markerB = new maplibregl.Marker({ color: "#ef4444" })
           .setLngLat([coords.lng, coords.lat])
           .addTo(map);
 
         current.pointB = coords;
       }
 
-      // Przekazanie punktów do rodzica
-      if (onPointsChange) {
-        onPointsChange({ pointA: current.pointA, pointB: current.pointB });
+      // Wykorzystanie bezpiecznej referencji
+      if (onPointsChangeRef.current) {
+        onPointsChangeRef.current({ pointA: current.pointA, pointB: current.pointB });
       }
     });
 
@@ -82,7 +97,135 @@ export default function Map({
       map.remove();
       mapRef.current = null;
     };
-  }, [initialLng, initialLat, initialZoom, onPointsChange]);
+  }, [initialLng, initialLat, initialZoom]); // POPRAWKA 1: Usunięcie onPointsChange z dependencies
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !routeData) return;
+
+    const normalizeRouteData = (value) => {
+      if (!value) return null;
+
+      if (
+        value.type === "Feature" ||
+        value.type === "FeatureCollection" ||
+        value.type === "LineString" ||
+        value.type === "MultiLineString" ||
+        value.type === "GeometryCollection"
+      ) {
+        return value;
+      }
+
+      if (value.geometry) {
+        return {
+          type: "Feature",
+          geometry: value.geometry,
+        };
+      }
+
+      if (Array.isArray(value)) {
+        return {
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: value,
+          },
+        };
+      }
+
+      if (value.coordinates && Array.isArray(value.coordinates)) {
+        return {
+          type: "Feature",
+          geometry: {
+            type: value.type || "LineString",
+            coordinates: value.coordinates,
+          },
+        };
+      }
+
+      if (value.route) {
+        return normalizeRouteData(value.route);
+      }
+
+      if (Array.isArray(value.routes) && value.routes.length > 0) {
+        return normalizeRouteData(value.routes[0]);
+      }
+
+      if (Array.isArray(value.features) && value.features.length > 0) {
+        const feature = value.features.find((item) => item && item.geometry);
+        return feature ? normalizeRouteData(feature) : value;
+      }
+
+      if (value.geojson) {
+        return normalizeRouteData(value.geojson);
+      }
+
+      return null;
+    };
+
+    const geojsonFeature = normalizeRouteData(routeData);
+    if (!geojsonFeature) return;
+
+    const drawRoute = () => {
+      const routeSource = map.getSource("route-source");
+      if (routeSource) {
+        routeSource.setData(geojsonFeature);
+      } else {
+        console.log("nic");
+        map.addSource("route-source", {
+          type: "geojson",
+          data: geojsonFeature,
+        });
+
+        map.addLayer({
+          id: "route-layer",
+          type: "line",
+          source: "route-source",
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+          },
+          paint: {
+            "line-color": "#2563eb",
+            "line-width": 5,
+            "line-opacity": 0.85,
+          },
+        });
+      }
+
+      // POPRAWKA 2: Bezpieczne pobieranie tablicy współrzędnych niezależnie od typu GeoJSON
+      let coords = null;
+      
+      if (geojsonFeature.geometry?.coordinates) {
+        coords = geojsonFeature.geometry.coordinates;
+      } else if (geojsonFeature.type === "LineString" || geojsonFeature.type === "MultiLineString") {
+        coords = geojsonFeature.coordinates;
+      } else if (geojsonFeature.type === "FeatureCollection" && geojsonFeature.features.length > 0) {
+        coords = geojsonFeature.features[0].geometry?.coordinates;
+      }
+
+      if (coords && coords.length > 0) {
+        // Ubezpieczenie w przypadku MultiLineString (tablica w tablicy)
+        const flatCoords = Array.isArray(coords[0]) && Array.isArray(coords[0][0]) 
+          ? coords.flat() 
+          : coords;
+
+        if (flatCoords.length > 0) {
+          const bounds = flatCoords.reduce(
+            (b, coord) => b.extend(coord),
+            new maplibregl.LngLatBounds(flatCoords[0], flatCoords[0])
+          );
+          map.fitBounds(bounds, { padding: 60, maxZoom: 16 });
+        }
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      drawRoute();
+    } else {
+      map.once("load", drawRoute);
+    }
+  }, [routeData]);
 
   return <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />;
 }
