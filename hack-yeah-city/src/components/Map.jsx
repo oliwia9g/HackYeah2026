@@ -291,11 +291,13 @@ export default function Map({
   points = { pointA: null, pointB: null },
   routeData = null, // GeoJSON z trasą z API
   theme = "light",
+  clearSelectionVersion = 0,
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const loadedRef = useRef(false);
   const stateRef = useRef({ pointA: null, pointB: null, markerA: null, markerB: null });
+  const clearSelectionVersionRef = useRef(clearSelectionVersion);
   
   // POPRAWKA 1: Utrzymanie aktualnej referencji do onPointsChange bez wyzwalania re-renderów mapy
   const onPointsChangeRef = useRef(onPointsChange);
@@ -396,6 +398,29 @@ export default function Map({
       loadedRef.current = false;
     };
   }, [initialLng, initialLat, initialZoom]); // POPRAWKA 1: Usunięcie onPointsChange z dependencies
+
+  useEffect(() => {
+    if (clearSelectionVersionRef.current === clearSelectionVersion) return;
+    clearSelectionVersionRef.current = clearSelectionVersion;
+
+    const map = mapRef.current;
+    if (!map) return;
+
+    const current = stateRef.current;
+    current.markerA?.remove();
+    current.markerB?.remove();
+    current.markerA = null;
+    current.markerB = null;
+    current.pointA = null;
+    current.pointB = null;
+
+    if (map.getLayer("route-layer")) {
+      map.removeLayer("route-layer");
+    }
+    if (map.getSource("route-source")) {
+      map.removeSource("route-source");
+    }
+  }, [clearSelectionVersion]);
 
   useEffect(() => {
     const map = mapRef.current;

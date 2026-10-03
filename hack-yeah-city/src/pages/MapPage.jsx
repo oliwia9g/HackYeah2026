@@ -8,15 +8,20 @@ export default function MapPage() {
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [theme, setTheme] = useState("light");
-  const [route, setRoute] = useState(null);
-  
+  const [addresses, setAddresses] = useState({ from: "", to: "" });
+  const [clearSelectionVersion, setClearSelectionVersion] = useState(0);
 
   const isDarkMode = theme === "dark";
+  const hasAddressInput = Boolean(addresses.from.trim() || addresses.to.trim());
 
   const handlePlanRoute = async () => {
-    if (!points.pointA || !points.pointB) return;
+    const useAddresses = hasAddressInput;
+    if (useAddresses && (!addresses.from.trim() || !addresses.to.trim())) {
+      setStatusMessage("Podaj adres początkowy i końcowy.");
+      return;
+    }
+    if (!useAddresses && (!points.pointA || !points.pointB)) return;
 
-    // 1. Odczytanie profilu z localStorage
     let profile = "wozek_inwalidzki";
     const savedProfile = localStorage.getItem("userAccessibilityProfile");
     if (savedProfile) {
@@ -27,31 +32,52 @@ export default function MapPage() {
       }
     }
 
-    // 2. Zapytanie do backendu
-    const params = new URLSearchParams({
-      from_lon: points.pointA.lng,
-      from_lat: points.pointA.lat,
-      to_lon: points.pointB.lng,
-      to_lat: points.pointB.lat,
-      profiles: profile,
-      mode: "warn",
-    });
-
-    const apiUrl = `https://cuddly-space-journey-g49vpw47wqwhw7rp-8000.app.github.dev/api/route?${params.toString()}`;
-
     setLoading(true);
     setStatusMessage("Wyznaczanie trasy...");
 
     try {
-      const response = await fetch(apiUrl);
+      const apiBase = "https://cuddly-space-journey-g49vpw47wqwhw7rp-8000.app.github.dev";
+      let origin;
+      let destination;
+
+      if (useAddresses) {
+        const geocode = async (address) => {
+          const response = await fetch(
+            `${apiBase}/api/geocode?q=${encodeURIComponent(address)}&limit=1`
+          );
+          if (!response.ok) {
+            throw new Error(`Nie udało się znaleźć adresu: ${address}`);
+          }
+          const data = await response.json();
+          if (!data.results?.length) {
+            throw new Error(`Nie znaleziono adresu: ${address}`);
+          }
+          return data.results[0];
+        };
+
+        [origin, destination] = await Promise.all([
+          geocode(addresses.from.trim()),
+          geocode(addresses.to.trim()),
+        ]);
+      } else {
+        origin = points.pointA;
+        destination = points.pointB;
+      }
+
+      const params = new URLSearchParams({
+        from_lon: origin.lon ?? origin.lng,
+        from_lat: origin.lat,
+        to_lon: destination.lon ?? destination.lng,
+        to_lat: destination.lat,
+        profiles: profile,
+        mode: "warn",
+      });
+      const response = await fetch(`${apiBase}/api/route?${params.toString()}`);
       if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
+        throw new Error("Nie udało się wyznaczyć trasy.");
       }
 
       const data = await response.json();
-      console.log("Odpowiedź API:", data);
-
-      // 3. Wyciągnięcie geometrii z odpowiedzi API
       const routeGeometry =
         data.route?.geometry ||
         data.route ||
@@ -72,14 +98,23 @@ export default function MapPage() {
     }
   };
 
-  const isReady = points.pointA && points.pointB;
-    const handleRouteFromAddresses = (route) => {
-    setRouteData(route);
-    setStatusMessage("Trasa wyznaczona!");
-    };
+  const isReady = hasAddressInput
+    ? Boolean(addresses.from.trim() && addresses.to.trim())
+    : Boolean(points.pointA && points.pointB);
+
+  const handleAddressesChange = (nextAddresses) => {
+    setAddresses(nextAddresses);
+    setPoints({ pointA: null, pointB: null });
+    setRouteData(null);
+    setStatusMessage("");
+    setClearSelectionVersion((version) => version + 1);
+  };
+
   const handlePointsChange = (nextPoints) => {
     setPoints(nextPoints);
+    setAddresses({ from: "", to: "" });
     setRouteData(null);
+    setStatusMessage("");
   };
 
   return (
@@ -126,7 +161,7 @@ export default function MapPage() {
                 transition: "all 0.2s ease",
               }}
             >
-              {loading ? "Planowanie..." : "Planuj trasę"}
+              {loading ? "Wyznaczanie trasy..." : "Wyznacz trasę"}
             </button>
 
             <button
@@ -147,7 +182,11 @@ export default function MapPage() {
 
           
         
-        <RouteForm onRoute={handleRouteFromAddresses} />
+        <RouteForm
+          addresses={addresses}
+          onAddressesChange={handleAddressesChange}
+          isDarkMode={isDarkMode}
+        />
 
           <span
             style={{
@@ -160,9 +199,11 @@ export default function MapPage() {
               padding: "8px 12px",
             }}
           >
-            {!points.pointA && "Kliknij punkt startowy na mapie."}
-            {points.pointA && !points.pointB && "Kliknij punkt docelowy na mapie."}
-            {isReady && !loading && !statusMessage && "Oba punkty wybrane! Kliknij „Planuj trasę”."}
+            {hasAddressInput && (!addresses.from.trim() || !addresses.to.trim()) &&
+              "Podaj adres początkowy i końcowy."}
+            {!hasAddressInput && !points.pointA && "Kliknij punkt startowy na mapie."}
+            {!hasAddressInput && points.pointA && !points.pointB && "Kliknij punkt docelowy na mapie."}
+            {isReady && !loading && !statusMessage && "Ustaw trasę i kliknij „Wyznacz trasę”."}
             {statusMessage && statusMessage}
           </span>
         </div>
@@ -178,7 +219,12 @@ export default function MapPage() {
             background: isDarkMode ? "#211e2d" : "#e6f6f8",
           }}
         >
-          <Map onPointsChange={setPoints} routeData={routeData} theme={theme} route={route} />
+          <Map
+            onPointsChange={handlePointsChange}
+            routeData={routeData}
+            theme={theme}
+            clearSelectionVersion={clearSelectionVersion}
+          />
         </div>
 
         <div
