@@ -1,0 +1,44 @@
+# Obszar demo: Stare Miasto + Kazimierz + okolice Dworca Głównego
+# Kolejność jak w osmnx 2.x: (left=west, bottom=south, right=east, top=north)
+bbox:
+  west: 19.924
+  south: 50.046
+  east: 19.962
+  north: 50.073
+
+city_name: Kraków
+crs_metric: "EPSG:2180"   # PL-1992, do liczenia długości i nachyleń w metrach
+
+paths:
+  raw: data/raw                          # w .gitignore
+  out: ../hack-yeah-city/public/data     # stąd front czyta GeoJSON-y
+
+osm:
+  network_type: walk
+  # POI: które klucze OSM pobieramy jako "miejsca"
+  poi_tags:
+    amenity: true
+    shop: true
+    tourism: true
+    leisure: true
+    public_transport: true
+    railway: [tram_stop, station]
+    highway: [elevator]
+  # atrybuty dostępności zamieniane na "fakty" (tabela z proweniencją)
+  fact_attributes:
+    - wheelchair
+    - wheelchair:description
+    - door:width
+    - entrance
+    - toilets:wheelchair
+    - changing_table
+    - bench
+    - tactile_paving
+    - hearing_loop
+    - level
+    - lit
+    - traffic_signals:sound
+    - traffic_signals:vibration
+
+# po ilu miesiącach od check_date/survey:date uznajemy dane za "nieświeże"
+freshness_months: 24

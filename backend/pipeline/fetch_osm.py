@@ -1,0 +1,185 @@
+"""Pobiera z OSM sieć pieszą + POI dla obszaru demo, robi audyt pokrycia tagów
+i eksportuje GeoJSON-y dla frontu.
+
+Uruchomienie (z katalogu backend/):
+    python -m pipeline.fetch_osm            # audyt + eksport
+    python -m pipeline.fetch_osm --audit    # tylko audyt (szybciej)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+
+import geopandas as gpd
+import osmnx as ox
+import pandas as pd
+
+from pipeline.common import bbox_tuple, load_config, out_dir, raw_dir, write_geojson
+from pipeline.facts import make_osm_facts
+
+# Tagi krawędzi (chodniki, przejścia, schody), które chcemy mieć w grafie
+EDGE_TAGS = [
+    "highway", "footway", "sidewalk", "surface", "smoothness", "incline",
+    "width", "kerb", "tactile_paving", "lit", "handrail", "ramp", "step_count",
+    "crossing", "crossing:markings", "wheelchair", "bicycle", "check_date",
+    "bridge", "tunnel", "layer",   # mosty/tunele: NMT nie nadaje sie do liczenia nachylen
+]
+# Tagi węzłów (przejścia i krawężniki często są na węzłach)
+NODE_TAGS = [
+    "highway", "kerb", "tactile_paving", "crossing", "crossing:island",
+    "traffic_signals:sound", "traffic_signals:vibration", "wheelchair",
+    "barrier", "check_date",
+]
+
+
+def configure_osmnx() -> None:
+    ox.settings.use_cache = True
+    ox.settings.log_console = False
+    for t in EDGE_TAGS:
+        if t not in ox.settings.useful_tags_way:
+            ox.settings.useful_tags_way.append(t)
+    for t in NODE_TAGS:
+        if t not in ox.settings.useful_tags_node:
+            ox.settings.useful_tags_node.append(t)
+
+
+def fetch_graph(cfg: dict):
+    print("pobieram graf pieszy z OSM...")
+    # retain_all=True: nie wycinamy małych odizolowanych kawałków, bo to też dane
+    G = ox.graph_from_bbox(
+        bbox_tuple(cfg), network_type=cfg["osm"]["network_type"], retain_all=True
+    )
+    nodes, edges = ox.graph_to_gdfs(G)
+    print(f"  węzły: {len(nodes)}, krawędzie: {len(edges)}")
+    return G, nodes.reset_index(), edges.reset_index()
+
+
+def fetch_pois(cfg: dict) -> gpd.GeoDataFrame:
+    print("pobieram POI z OSM...")
+    pois = ox.features_from_bbox(bbox_tuple(cfg), cfg["osm"]["poi_tags"])
+    print(f"  obiekty: {len(pois)}")
+    return pois
+
+
+def fetch_crossings(cfg: dict) -> gpd.GeoDataFrame:
+    """Przejścia i krawężniki jako osobne obiekty (węzły) do audytu i warstw."""
+    tags = {"highway": ["crossing", "traffic_signals", "elevator", "steps"], "kerb": True}
+    return ox.features_from_bbox(bbox_tuple(cfg), tags)
+
+
+# ---------- AUDYT POKRYCIA ----------
+
+def coverage(gdf: pd.DataFrame, cols: list[str]) -> dict:
+    n = len(gdf)
+    out = {}
+    for c in cols:
+        if n == 0 or c not in gdf.columns:
+            out[c] = {"count": 0, "pct": 0.0}
+        else:
+            k = int(gdf[c].notna().sum())
+            out[c] = {"count": k, "pct": round(100 * k / n, 1)}
+    return out
+
+
+def run_audit(edges, pois, crossings, cfg) -> dict:
+    footways = edges[edges["highway"].astype(str).str.contains("footway|path|pedestrian|steps")]
+    audit = {
+        "bbox": cfg["bbox"],
+        "edges_total": len(edges),
+        "edges_footway_like": len(footways),
+        "edges_tag_coverage": coverage(
+            edges, ["surface", "smoothness", "incline", "width", "kerb", "lit", "tactile_paving"]
+        ),
+        "poi_total": len(pois),
+        "poi_tag_coverage": coverage(
+            pois,
+            ["wheelchair", "wheelchair:description", "door:width", "toilets:wheelchair",
+             "entrance", "check_date", "survey:date"],
+        ),
+        "crossings_total": len(crossings),
+        "crossings_tag_coverage": coverage(
+            crossings, ["kerb", "tactile_paving", "traffic_signals:sound", "traffic_signals:vibration"]
+        ),
+    }
+    if "wheelchair" in pois.columns:
+        audit["poi_wheelchair_values"] = pois["wheelchair"].value_counts().to_dict()
+    return audit
+
+
+def print_audit(a: dict) -> None:
+    print("\n=== AUDYT POKRYCIA TAGÓW (obszar demo) ===")
+    print(f"krawędzie: {a['edges_total']} (piesze: {a['edges_footway_like']})")
+    for k, v in a["edges_tag_coverage"].items():
+        print(f"  krawędzie z {k:15s} {v['count']:5d}  ({v['pct']}%)")
+    print(f"POI: {a['poi_total']}")
+    for k, v in a["poi_tag_coverage"].items():
+        print(f"  POI z {k:25s} {v['count']:5d}  ({v['pct']}%)")
+    if "poi_wheelchair_values" in a:
+        print(f"  wartości wheelchair: {a['poi_wheelchair_values']}")
+    print(f"przejścia/krawężniki: {a['crossings_total']}")
+    for k, v in a["crossings_tag_coverage"].items():
+        print(f"  z {k:28s} {v['count']:5d}  ({v['pct']}%)")
+
+
+# ---------- EKSPORT ----------
+
+def export(cfg, nodes, edges, pois, crossings) -> None:
+    out = out_dir(cfg)
+    raw = raw_dir(cfg)
+
+    # surowe pliki (nie idą do gita)
+    edges.to_pickle(raw / "edges.pkl")
+    nodes.to_pickle(raw / "nodes.pkl")
+
+    # krawędzie: tylko potrzebne kolumny + geometria
+    keep = [c for c in EDGE_TAGS + ["u", "v", "key", "length", "geometry"] if c in edges.columns]
+    write_geojson(edges[keep], out / "edges.geojson")
+
+    # POI: punkty (dla obiektów powierzchniowych bierzemy centroid)
+    pois_pts = pois.copy()
+    pois_pts["geometry"] = pois_pts.geometry.representative_point()
+    poi_cols = [c for c in ["name", "amenity", "shop", "tourism", "leisure", "wheelchair",
+                            "wheelchair:description", "door:width", "toilets:wheelchair",
+                            "check_date", "geometry"] if c in pois_pts.columns]
+    poi_out = pois_pts[poi_cols].copy()
+    # indeks to MultiIndex (typ, id); nazwy poziomow zalezą od wersji osmnx, wiec bierzemy po pozycji
+    poi_out["feature_id"] = [f"{t}/{i}" for t, i in pois_pts.index]
+    poi_out = poi_out.reset_index(drop=True)
+    write_geojson(poi_out, out / "pois.geojson")
+
+    # przejścia i krawężniki
+    cross_pts = crossings.copy()
+    cross_pts["geometry"] = cross_pts.geometry.representative_point()
+    cross_pts["feature_id"] = [f"{t}/{i}" for t, i in cross_pts.index]
+    write_geojson(cross_pts.reset_index(drop=True), out / "crossings.geojson")
+
+    # fakty (tabela z proweniencją) - CSV + JSON dla frontu
+    facts = make_osm_facts(pois, cfg["osm"]["fact_attributes"], cfg["freshness_months"])
+    facts.to_csv(out / "facts.csv", index=False)
+    facts.to_json(out / "facts.json", orient="records", force_ascii=False)
+    print(f"zapisano facts ({len(facts)} wierszy)")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--audit", action="store_true", help="tylko audyt, bez eksportu")
+    args = ap.parse_args()
+
+    cfg = load_config()
+    configure_osmnx()
+
+    _, nodes, edges = fetch_graph(cfg)
+    pois = fetch_pois(cfg)
+    crossings = fetch_crossings(cfg)
+
+    audit = run_audit(edges, pois, crossings, cfg)
+    print_audit(audit)
+    with open(out_dir(cfg) / "audit.json", "w", encoding="utf-8") as f:
+        json.dump(audit, f, ensure_ascii=False, indent=2)
+
+    if not args.audit:
+        export(cfg, nodes, edges, pois, crossings)
+
+
+if __name__ == "__main__":
+    main()
