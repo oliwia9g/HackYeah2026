@@ -4,7 +4,7 @@ function Navbar() {
   return (
     <nav className="navbar">
       <NavLink to="/" className="navbar-logo">
-        MyApp
+        <img src="/logo_ponad_bar.png" alt="Kraków Bez Barier" />
       </NavLink>
 
       <div className="navbar-links">
@@ -31,4 +31,3 @@ function Navbar() {
 }
 
 export default Navbar;
-

@@ -1,0 +1,205 @@
+import React, { useEffect, useRef } from "react";
+import * as maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+
+export default function Map({
+  initialLng = 19.94,
+  initialLat = 50.06,
+  initialZoom = 13,
+  onPointsChange,
+  routeData = null, // GeoJSON z trasą z API
+}) {
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const stateRef = useRef({ pointA: null, pointB: null, markerA: null, markerB: null });
+
+  useEffect(() => {
+    if (mapRef.current) return;
+
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: {
+        version: 8,
+        sources: {
+          "osm-tiles": {
+            type: "raster",
+            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            attribution: "&copy; OpenStreetMap contributors",
+          },
+        },
+        layers: [
+          {
+            id: "osm-tiles-layer",
+            type: "raster",
+            source: "osm-tiles",
+            minzoom: 0,
+            maxzoom: 19,
+          },
+        ],
+      },
+      center: [initialLng, initialLat],
+      zoom: initialZoom,
+    });
+
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    map.on("click", (e) => {
+      const coords = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      const current = stateRef.current;
+
+      // 1. Pierwsze kliknięcie (lub reset po poprzedniej parze)
+      if (!current.pointA || (current.pointA && current.pointB)) {
+        current.markerA?.remove();
+        current.markerB?.remove();
+        current.markerB = null;
+
+        if (map.getLayer("route-layer")) {
+          map.removeLayer("route-layer");
+        }
+        if (map.getSource("route-source")) {
+          map.removeSource("route-source");
+        }
+
+        current.markerA = new maplibregl.Marker({ color: "#10b981" })
+          .setLngLat([coords.lng, coords.lat])
+          .addTo(map);
+
+        current.pointA = coords;
+        current.pointB = null;
+      }
+      // 2. Drugie kliknięcie
+      else if (current.pointA && !current.pointB) {
+        current.markerB = new maplibregl.Marker({ color: "#ef4444" })
+          .setLngLat([coords.lng, coords.lat])
+          .addTo(map);
+
+        current.pointB = coords;
+      }
+
+      if (onPointsChange) {
+        onPointsChange({ pointA: current.pointA, pointB: current.pointB });
+      }
+    });
+
+    return () => {
+      stateRef.current.markerA?.remove();
+      stateRef.current.markerB?.remove();
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [initialLng, initialLat, initialZoom, onPointsChange]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !routeData) return;
+
+    const normalizeRouteData = (value) => {
+      if (!value) return null;
+
+      if (
+        value.type === "Feature" ||
+        value.type === "FeatureCollection" ||
+        value.type === "LineString" ||
+        value.type === "MultiLineString" ||
+        value.type === "GeometryCollection"
+      ) {
+        return value;
+      }
+
+      if (value.geometry) {
+        return {
+          type: "Feature",
+          geometry: value.geometry,
+        };
+      }
+
+      if (Array.isArray(value)) {
+        return {
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: value,
+          },
+        };
+      }
+
+      if (value.coordinates && Array.isArray(value.coordinates)) {
+        return {
+          type: "Feature",
+          geometry: {
+            type: value.type || "LineString",
+            coordinates: value.coordinates,
+          },
+        };
+      }
+
+      if (value.route) {
+        return normalizeRouteData(value.route);
+      }
+
+      if (Array.isArray(value.routes) && value.routes.length > 0) {
+        return normalizeRouteData(value.routes[0]);
+      }
+
+      if (Array.isArray(value.features) && value.features.length > 0) {
+        const feature = value.features.find((item) => item && item.geometry);
+        return feature ? normalizeRouteData(feature) : value;
+      }
+
+      if (value.geojson) {
+        return normalizeRouteData(value.geojson);
+      }
+
+      return null;
+    };
+
+    const geojsonFeature = normalizeRouteData(routeData);
+    if (!geojsonFeature) return;
+
+    const drawRoute = () => {
+      const routeSource = map.getSource("route-source");
+      if (routeSource) {
+        routeSource.setData(geojsonFeature);
+      } else {
+        map.addSource("route-source", {
+          type: "geojson",
+          data: geojsonFeature,
+        });
+
+        map.addLayer({
+          id: "route-layer",
+          type: "line",
+          source: "route-source",
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+          },
+          paint: {
+            "line-color": "#2563eb",
+            "line-width": 5,
+            "line-opacity": 0.85,
+          },
+        });
+      }
+
+      const coords = geojsonFeature.geometry?.coordinates;
+      if (coords && coords.length > 0) {
+        const bounds = coords.reduce(
+          (b, coord) => b.extend(coord),
+          new maplibregl.LngLatBounds(coords[0], coords[0])
+        );
+        map.fitBounds(bounds, { padding: 60, maxZoom: 16 });
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      drawRoute();
+    } else {
+      map.once("load", drawRoute);
+    }
+  }, [routeData]);
+
+  return <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />;
+}

@@ -1,53 +1,25 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --brand-purple: #7a6cb1;
+  --brand-turquoise: #58b6c6;
+  --brand-coral: #e15a4f;
+  --brand-yellow: #f4cc5c;
+  --brand-ink: #000000;
+  --brand-paper: #fffdf8;
+  --brand-border: #d8d3e5;
+  --brand-muted: #4e4a56;
+  --sans: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  --heading: var(--sans);
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  font: 16px/1.5 var(--sans);
+  color-scheme: light;
+  color: var(--brand-ink);
+  background: var(--brand-paper);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
 }
 
 body {
@@ -59,7 +31,7 @@ body {
   max-width: 100%;
   margin: 0 auto;
   text-align: center;
-  border-inline: 1px solid var(--border);
+  border-inline: 1px solid var(--brand-border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -70,7 +42,7 @@ h1,
 h2 {
   font-family: var(--heading);
   font-weight: 500;
-  color: var(--text-h);
+  color: var(--brand-ink);
 }
 
 h1 {
@@ -100,14 +72,14 @@ code,
   font-family: var(--mono);
   display: inline-flex;
   border-radius: 4px;
-  color: var(--text-h);
+  color: var(--brand-ink);
 }
 
 code {
   font-size: 15px;
   line-height: 135%;
   padding: 4px 8px;
-  background: var(--code-bg);
+  background: #f1edf8;
 }
 
 * {
@@ -117,7 +89,14 @@ code {
 }
 
 body {
-  font-family: Arial, sans-serif;
+  font-family: var(--sans);
+  background: var(--brand-paper);
+  color: var(--brand-ink);
+}
+
+button,
+input {
+  font: inherit;
 }
 
 .navbar {
@@ -126,7 +105,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 40px;
-  background-color: #111827;
+  background-color: var(--brand-purple);
 }
 
 .navbar-logo {
@@ -141,18 +120,18 @@ body {
 }
 
 .nav-link {
-  color: #9ca3af;
+  color: #ffffff;
   text-decoration: none;
   font-size: 16px;
   transition: color 0.2s ease;
 }
 
 .nav-link:hover {
-  color: white;
+  color: #ffffff;
 }
 
 .nav-link.active {
-  color: white;
+  color: #ffffff;
 }
 
 .content {
@@ -165,9 +144,9 @@ body {
 }
 
 body {
-  font-family: Arial, sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
+  font-family: var(--sans);
+  background: var(--brand-paper);
+  color: var(--brand-ink);
 }
 
 /* NAVBAR */
@@ -183,7 +162,7 @@ body {
   padding: 0 40px;
 
   background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 3px solid var(--brand-turquoise);
 
   position: sticky;
   top: 0;
@@ -193,7 +172,7 @@ body {
 /* LOGO */
 
 .navbar-logo {
-  color: #0f172a;
+  color: var(--brand-ink);
   text-decoration: none;
 
   font-size: 22px;
@@ -205,6 +184,14 @@ body {
 
 .navbar-logo:hover {
   opacity: 0.7;
+}
+
+.navbar-logo img {
+  display: block;
+  width: auto;
+  height: 52px;
+  max-width: min(260px, 45vw);
+  object-fit: contain;
 }
 
 /* LINKS */
@@ -220,7 +207,7 @@ body {
 
   padding: 10px 16px;
 
-  color: #64748b;
+  color: var(--brand-ink);
   text-decoration: none;
 
   font-size: 15px;
@@ -234,13 +221,13 @@ body {
 }
 
 .nav-link:hover {
-  color: #0f172a;
-  background: #f1f5f9;
+  color: var(--brand-ink);
+  background: #e6f6f8;
 }
 
 .nav-link.active {
-  color: #2563eb;
-  background: #eff6ff;
+  color: var(--brand-ink);
+  background: var(--brand-yellow);
 }
 
 /* CONTENT */
@@ -265,5 +252,3 @@ body {
     font-size: 14px;
   }
 }
-
-

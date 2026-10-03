@@ -75,9 +75,9 @@ export default function MapPage() {
     <div
       style={{
         padding: "24px 20px 32px",
-        background: isDarkMode ? "#020817" : "#edf2f7",
+        background: isDarkMode ? "#211e2d" : "#f0edf7",
         minHeight: "100vh",
-        color: isDarkMode ? "#e2e8f0" : "#1f2937",
+        color: isDarkMode ? "#ffffff" : "#000000",
         transition: "all 0.2s ease",
       }}
     >
@@ -90,10 +90,10 @@ export default function MapPage() {
             gap: "12px",
             marginBottom: "16px",
             padding: "14px 18px",
-            background: isDarkMode ? "rgba(15, 23, 42, 0.9)" : "rgba(255,255,255,0.9)",
-            border: "1px solid rgba(148, 163, 184, 0.2)",
+            background: isDarkMode ? "#302b40" : "rgba(255,255,255,0.96)",
+            border: isDarkMode ? "1px solid rgba(244, 204, 92, 0.35)" : "1px solid #d8d3e5",
             borderRadius: "18px",
-            boxShadow: isDarkMode ? "0 8px 24px rgba(2, 6, 23, 0.6)" : "0 8px 24px rgba(15, 23, 42, 0.08)",
+            boxShadow: isDarkMode ? "0 8px 24px rgba(0, 0, 0, 0.35)" : "0 8px 24px rgba(122, 108, 177, 0.12)",
             backdropFilter: "blur(8px)",
             flexWrap: "wrap",
           }}
@@ -108,9 +108,9 @@ export default function MapPage() {
                 fontWeight: 700,
                 border: "none",
                 borderRadius: "999px",
-                background: isReady && !loading ? "linear-gradient(135deg, #2563eb, #1d4ed8)" : isDarkMode ? "#1e293b" : "#e5e7eb",
-                color: isReady && !loading ? "#fff" : isDarkMode ? "#94a3b8" : "#6b7280",
-                boxShadow: isReady && !loading ? "0 10px 20px rgba(37, 99, 235, 0.25)" : "none",
+                background: isReady && !loading ? "linear-gradient(110deg, #f4cc5c, #e15a4f)" : isDarkMode ? "#4a435d" : "#e6f6f8",
+                color: "#000000",
+                boxShadow: isReady && !loading ? "0 10px 20px rgba(225, 90, 79, 0.25)" : "none",
                 cursor: isReady && !loading ? "pointer" : "not-allowed",
                 transition: "all 0.2s ease",
               }}
@@ -123,9 +123,9 @@ export default function MapPage() {
               style={{
                 padding: "10px 14px",
                 borderRadius: "999px",
-                border: isDarkMode ? "1px solid rgba(148, 163, 184, 0.35)" : "1px solid rgba(148, 163, 184, 0.2)",
-                background: isDarkMode ? "#111827" : "#f8fafc",
-                color: isDarkMode ? "#f8fafc" : "#111827",
+                border: isDarkMode ? "1px solid #58b6c6" : "1px solid #7a6cb1",
+                background: isDarkMode ? "#58b6c6" : "#f4cc5c",
+                color: "#000000",
                 fontWeight: 700,
                 cursor: "pointer",
               }}
@@ -137,10 +137,10 @@ export default function MapPage() {
           <span
             style={{
               fontSize: "14px",
-              color: isDarkMode ? "#cbd5e1" : "#374151",
+              color: isDarkMode ? "#ffffff" : "#000000",
               fontWeight: 500,
-              background: isDarkMode ? "rgba(15, 23, 42, 0.9)" : "#f8fafc",
-              border: isDarkMode ? "1px solid rgba(148, 163, 184, 0.25)" : "1px solid #e2e8f0",
+              background: isDarkMode ? "#302b40" : "#e6f6f8",
+              border: isDarkMode ? "1px solid rgba(88, 182, 198, 0.5)" : "1px solid #58b6c6",
               borderRadius: "999px",
               padding: "8px 12px",
             }}
@@ -158,9 +158,9 @@ export default function MapPage() {
             height: "600px",
             borderRadius: "24px",
             overflow: "hidden",
-            boxShadow: isDarkMode ? "0 16px 36px rgba(2, 6, 23, 0.6)" : "0 16px 36px rgba(15, 23, 42, 0.12)",
-            border: "1px solid rgba(148, 163, 184, 0.25)",
-            background: isDarkMode ? "#020817" : "#dfeaf5",
+            boxShadow: isDarkMode ? "0 16px 36px rgba(0, 0, 0, 0.4)" : "0 16px 36px rgba(122, 108, 177, 0.2)",
+            border: "2px solid #7a6cb1",
+            background: isDarkMode ? "#211e2d" : "#e6f6f8",
           }}
         >
           <Map onPointsChange={setPoints} routeData={routeData} theme={theme} />
@@ -177,48 +177,48 @@ export default function MapPage() {
           <div
             style={{
               flex: "1 1 220px",
-              background: isDarkMode ? "rgba(15, 23, 42, 0.9)" : "rgba(255,255,255,0.9)",
-              border: "1px solid rgba(148, 163, 184, 0.25)",
+              background: isDarkMode ? "#302b40" : "#ffffff",
+              border: isDarkMode ? "1px solid rgba(244, 204, 92, 0.35)" : "1px solid #d8d3e5",
               borderRadius: "16px",
               padding: "12px 16px",
-              boxShadow: isDarkMode ? "0 8px 24px rgba(2, 6, 23, 0.46)" : "0 8px 24px rgba(15, 23, 42, 0.05)",
+              boxShadow: isDarkMode ? "0 8px 24px rgba(0, 0, 0, 0.3)" : "0 8px 24px rgba(122, 108, 177, 0.08)",
             }}
           >
             {points.pointA ? (
               <div>
-                <div style={{ fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", color: isDarkMode ? "#94a3b8" : "#64748b", marginBottom: "4px" }}>
+                <div style={{ fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", color: isDarkMode ? "#58b6c6" : "#7a6cb1", marginBottom: "4px" }}>
                   Punkt A
                 </div>
-                <div style={{ fontSize: "15px", fontWeight: 700, color: isDarkMode ? "#f8fafc" : "#111827" }}>
+                <div style={{ fontSize: "15px", fontWeight: 700, color: isDarkMode ? "#ffffff" : "#000000" }}>
                   {points.pointA.lng.toFixed(5)}, {points.pointA.lat.toFixed(5)}
                 </div>
               </div>
             ) : (
-              <div style={{ color: isDarkMode ? "#94a3b8" : "#64748b" }}>Punkt A: nie wybrano</div>
+              <div style={{ color: isDarkMode ? "#ffffff" : "#4e4a56" }}>Punkt A: nie wybrano</div>
             )}
           </div>
 
           <div
             style={{
               flex: "1 1 220px",
-              background: isDarkMode ? "rgba(15, 23, 42, 0.9)" : "rgba(255,255,255,0.9)",
-              border: "1px solid rgba(148, 163, 184, 0.25)",
+              background: isDarkMode ? "#302b40" : "#ffffff",
+              border: isDarkMode ? "1px solid rgba(244, 204, 92, 0.35)" : "1px solid #d8d3e5",
               borderRadius: "16px",
               padding: "12px 16px",
-              boxShadow: isDarkMode ? "0 8px 24px rgba(2, 6, 23, 0.46)" : "0 8px 24px rgba(15, 23, 42, 0.05)",
+              boxShadow: isDarkMode ? "0 8px 24px rgba(0, 0, 0, 0.3)" : "0 8px 24px rgba(122, 108, 177, 0.08)",
             }}
           >
             {points.pointB ? (
               <div>
-                <div style={{ fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", color: isDarkMode ? "#94a3b8" : "#64748b", marginBottom: "4px" }}>
+                <div style={{ fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", color: isDarkMode ? "#58b6c6" : "#7a6cb1", marginBottom: "4px" }}>
                   Punkt B
                 </div>
-                <div style={{ fontSize: "15px", fontWeight: 700, color: isDarkMode ? "#f8fafc" : "#111827" }}>
+                <div style={{ fontSize: "15px", fontWeight: 700, color: isDarkMode ? "#ffffff" : "#000000" }}>
                   {points.pointB.lng.toFixed(5)}, {points.pointB.lat.toFixed(5)}
                 </div>
               </div>
             ) : (
-              <div style={{ color: isDarkMode ? "#94a3b8" : "#64748b" }}>Punkt B: nie wybrano</div>
+              <div style={{ color: isDarkMode ? "#ffffff" : "#4e4a56" }}>Punkt B: nie wybrano</div>
             )}
           </div>
         </div>
