@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import Map from "../components/Map";
+import RouteForm from "../components/RouteForm";
 
 export default function MapPage() {
   const [points, setPoints] = useState({ pointA: null, pointB: null });
@@ -7,6 +8,8 @@ export default function MapPage() {
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [theme, setTheme] = useState("light");
+  const [route, setRoute] = useState(null);
+  
 
   const isDarkMode = theme === "dark";
 
@@ -70,6 +73,10 @@ export default function MapPage() {
   };
 
   const isReady = points.pointA && points.pointB;
+    const handleRouteFromAddresses = (route) => {
+    setRouteData(route);
+    setStatusMessage("Trasa wyznaczona!");
+  };
 
   return (
     <div
@@ -134,6 +141,10 @@ export default function MapPage() {
             </button>
           </div>
 
+          
+        
+        <RouteForm onRoute={handleRouteFromAddresses} />
+
           <span
             style={{
               fontSize: "14px",
@@ -163,7 +174,7 @@ export default function MapPage() {
             background: isDarkMode ? "#211e2d" : "#e6f6f8",
           }}
         >
-          <Map onPointsChange={setPoints} routeData={routeData} theme={theme} />
+          <Map onPointsChange={setPoints} routeData={routeData} theme={theme} route={route} />
         </div>
 
         <div
