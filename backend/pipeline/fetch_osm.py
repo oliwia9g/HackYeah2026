@@ -1,9 +1,5 @@
 """Pobiera z OSM sieć pieszą + POI dla obszaru demo, robi audyt pokrycia tagów
 i eksportuje GeoJSON-y dla frontu.
-
-Uruchomienie (z katalogu backend/):
-    python -m pipeline.fetch_osm            # audyt + eksport
-    python -m pipeline.fetch_osm --audit    # tylko audyt (szybciej)
 """
 from __future__ import annotations
 
@@ -15,7 +11,7 @@ import osmnx as ox
 import pandas as pd
 
 from pipeline.common import bbox_tuple, load_config, out_dir, raw_dir, write_geojson
-from pipeline.facts import make_osm_facts
+from pipeline.facts import load_osm_meta, make_osm_facts
 
 # Tagi krawędzi (chodniki, przejścia, schody), które chcemy mieć w grafie
 EDGE_TAGS = [
@@ -154,7 +150,10 @@ def export(cfg, nodes, edges, pois, crossings) -> None:
     write_geojson(cross_pts.reset_index(drop=True), out / "crossings.geojson")
 
     # fakty (tabela z proweniencją) - CSV + JSON dla frontu
-    facts = make_osm_facts(pois, cfg["osm"]["fact_attributes"], cfg["freshness_months"])
+    meta = load_osm_meta(raw)
+    print(f"daty ostatniej edycji z Overpass: {len(meta)} obiektow" if meta
+          else "brak osm_meta.json - daty tylko z check_date (uruchom pipeline.fetch_overpass_meta)")
+    facts = make_osm_facts(pois, cfg["osm"]["fact_attributes"], cfg["freshness_months"], meta)
     facts.to_csv(out / "facts.csv", index=False)
     facts.to_json(out / "facts.json", orient="records", force_ascii=False)
     print(f"zapisano facts ({len(facts)} wierszy)")
