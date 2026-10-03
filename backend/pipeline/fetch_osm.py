@@ -15,7 +15,7 @@ import osmnx as ox
 import pandas as pd
 
 from pipeline.common import load_aoi, load_config, out_dir, query_aoi, raw_dir, with_overpass_fallback, write_geojson
-from pipeline.facts import load_osm_meta, make_osm_facts
+from pipeline.facts import building_footprints, drop_noise_buildings, load_osm_meta, make_osm_facts
 
 # Tagi krawędzi (chodniki, przejścia, schody), które chcemy mieć w grafie
 EDGE_TAGS = [
@@ -77,8 +77,19 @@ def fetch_pois(cfg: dict) -> gpd.GeoDataFrame:
     print("pobieram POI z OSM...")
     pois = with_overpass_fallback(ox.features_from_polygon, query_aoi(cfg), cfg["osm"]["poi_tags"])
     pois = within_aoi(pois, cfg)
+    pois = drop_noise_buildings(pois, cfg)
     print(f"  obiekty: {len(pois)}")
     return pois
+
+
+def fetch_buildings(cfg: dict) -> gpd.GeoDataFrame:
+    """Wszystkie obrysy budynkow w obszarze (do klikniecia w mape: adres i cechy budynku)."""
+    print("pobieram obrysy budynkow z OSM...")
+    b = with_overpass_fallback(ox.features_from_polygon, query_aoi(cfg), {"building": True})
+    b = within_aoi(b, cfg)
+    b = b[b.geometry.geom_type.isin(["Polygon", "MultiPolygon"])]
+    print(f"  budynki: {len(b)}")
+    return b
 
 
 def fetch_crossings(cfg: dict) -> gpd.GeoDataFrame:
@@ -143,7 +154,7 @@ def print_audit(a: dict) -> None:
 
 # ---------- EKSPORT ----------
 
-def export(cfg, nodes, edges, pois, crossings) -> None:
+def export(cfg, nodes, edges, pois, crossings, buildings=None) -> None:
     out = out_dir(cfg)
     raw = raw_dir(cfg)
 
@@ -165,9 +176,9 @@ def export(cfg, nodes, edges, pois, crossings) -> None:
     # POI: punkty (dla obiektów powierzchniowych bierzemy centroid)
     pois_pts = pois.copy()
     pois_pts["geometry"] = pois_pts.geometry.representative_point()
-    poi_cols = [c for c in ["name", "amenity", "shop", "tourism", "leisure", "wheelchair",
-                            "wheelchair:description", "door:width", "toilets:wheelchair",
-                            "check_date", "geometry"] if c in pois_pts.columns]
+    poi_cols = [c for c in ["name", "amenity", "shop", "tourism", "leisure", "building", "highway", "railway",
+                            "public_transport", "wheelchair", "wheelchair:description", "door:width", "toilets:wheelchair",
+                            "elevator", "check_date", "geometry"] if c in pois_pts.columns]
     poi_out = pois_pts[poi_cols].copy()
     # indeks to MultiIndex (typ, id); nazwy poziomow zalezą od wersji osmnx, wiec bierzemy po pozycji
     poi_out["feature_id"] = [f"{t}/{i}" for t, i in pois_pts.index]
@@ -184,7 +195,14 @@ def export(cfg, nodes, edges, pois, crossings) -> None:
     meta = load_osm_meta(raw)
     print(f"daty ostatniej edycji z Overpass: {len(meta)} obiektow" if meta
           else "brak osm_meta.json - daty tylko z check_date (uruchom pipeline.fetch_overpass_meta)")
-    facts = make_osm_facts(pois, cfg["osm"]["fact_attributes"], cfg["freshness_months"], meta)
+    facts_src = pois
+    if buildings is not None and len(buildings):
+        # obrysy budynkow (klikanie w mape) + fakty z ich tagow (winda, rampa, toaleta...) takze dla budynkow spoza POI
+        (out / "buildings.geojson").write_text(json.dumps(building_footprints(buildings, cfg), ensure_ascii=False), "utf-8")
+        extra = buildings[~buildings.index.isin(pois.index)]
+        facts_src = pd.concat([pois, extra]) if len(extra) else pois
+        print(f"zapisano buildings.geojson ({len(buildings)} budynkow)")
+    facts = make_osm_facts(facts_src, cfg["osm"]["fact_attributes"], cfg["freshness_months"], meta)
     facts.to_csv(out / "facts.csv", index=False)
     facts.to_json(out / "facts.json", orient="records", force_ascii=False)
     print(f"zapisano facts ({len(facts)} wierszy)")
@@ -201,6 +219,7 @@ def main() -> None:
     _, nodes, edges = fetch_graph(cfg)
     pois = fetch_pois(cfg)
     crossings = fetch_crossings(cfg)
+    buildings = fetch_buildings(cfg)
 
     audit = run_audit(edges, pois, crossings, cfg)
     print_audit(audit)
@@ -208,7 +227,7 @@ def main() -> None:
         json.dump(audit, f, ensure_ascii=False, indent=2)
 
     if not args.audit:
-        export(cfg, nodes, edges, pois, crossings)
+        export(cfg, nodes, edges, pois, crossings, buildings)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,60 @@
+# SZABLON: konfiguracja kolejnego miasta. Skopiuj do cities/<miasto>.yaml, uzupelnij i uruchom:
+#   CITY_CONFIG=cities/<miasto>.yaml python -m pipeline.run_all
+#   CITY_CONFIG=cities/<miasto>.yaml uvicorn api.main:create_app --factory --port 8000
+# Kazde miasto ma wlasne katalogi danych (paths), wiec dane miast sie nie mieszaja.
+aoi: aoi/<miasto>_obszar.geojson     # wielokat obszaru (GeoJSON, dowolny CRS zapisany w pliku)
+city_name: <Miasto>
+crs_metric: "EPSG:2180"              # uklad metryczny dla kraju (Polska: EPSG:2180)
+
+paths:
+  raw: data/<miasto>/raw
+  out: data/<miasto>/out             # stad API czyta GeoJSON-y i facts.json
+
+osm:
+  network_type: walk
+  poi_tags:
+    amenity: true
+    shop: true
+    tourism: true
+    leisure: true
+    public_transport: true
+    railway: [tram_stop, station]
+    highway: [elevator]
+    building: [public, civic, government, hospital, clinic, school, university, college, kindergarten, train_station,
+               transportation, church, cathedral, chapel, monastery, retail, supermarket, hotel, museum, theatre, stadium]
+    healthcare: true
+  fact_attributes:
+    - wheelchair
+    - wheelchair:description
+    - door:width
+    - entrance
+    - toilets:wheelchair
+    - changing_table
+    - bench
+    - tactile_paving
+    - hearing_loop
+    - level
+    - lit
+    - traffic_signals:sound
+    - traffic_signals:vibration
+    - elevator
+    - ramp:wheelchair
+    - ramp
+    - step_count
+    - automatic_door
+    - handrail
+    - toilets
+    - fee
+    - opening_hours
+    - capacity:disabled
+
+# Komunikacja: pliki GTFS operatora (jesli miasto je publikuje). Bez tej sekcji dziala sama piesza czesc.
+transit:
+  gtfs:
+    tramwaj: https://example.org/gtfs_tram.zip
+    autobus: https://example.org/gtfs_bus.zip
+  realtime_base: https://example.org/gtfs-rt/    # katalog z TripUpdates_*.pb / VehiclePositions_*.pb (opcjonalnie)
+
+freshness_months: 24
+search_aliases: {}
+demo_routes: []

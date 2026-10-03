@@ -26,6 +26,10 @@ osm:
     public_transport: true
     railway: [tram_stop, station]
     highway: [elevator]
+    # budynki uzytku publicznego: winda, toaleta, rampa itd. sa na ich obiektach; anonimowe kamienice odrzuca pipeline
+    building: [public, civic, government, hospital, clinic, school, university, college, kindergarten, train_station,
+               transportation, church, cathedral, chapel, monastery, retail, supermarket, hotel, museum, theatre, stadium]
+    healthcare: true
   # atrybuty dostępności zamieniane na "fakty" (tabela z proweniencją)
   fact_attributes:
     - wheelchair
@@ -41,6 +45,36 @@ osm:
     - lit
     - traffic_signals:sound
     - traffic_signals:vibration
+    # budynki i wejscia
+    - elevator
+    - ramp:wheelchair
+    - ramp
+    - step_count
+    - automatic_door
+    - handrail
+    # toalety i parkingi
+    - toilets
+    - fee
+    - opening_hours
+    - capacity:disabled
+
+# Komunikacja miejska: adresy plikow GTFS (statyczne) i katalog GTFS-Realtime. Inne miasto = inne adresy w jego pliku konfiguracji.
+transit:
+  gtfs:
+    tramwaj: https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip
+    autobus: https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip
+  realtime_base: https://gtfs.ztp.krakow.pl/
 
 # po ilu miesiącach od check_date/survey:date uznajemy dane za "nieświeże"
 freshness_months: 24
+
+# Aliasy wyszukiwania: potoczna nazwa -> nazwa w OSM (oba bez polskich znakow, malymi literami). Dopisuj wg potrzeb.
+search_aliases:
+  dworzec glowny: krakow glowny
+  dworzec: krakow glowny
+  glowny dworzec: krakow glowny
+
+# Gotowe trasy do pokazu (GET /api/demo/scenarios): zapytania tekstowe jak w polach "skad/dokad"
+demo_routes:
+  - {from_q: "Floriańska 10", to_q: "Dworzec Główny", profile: wozek_inwalidzki, title: "Wózek: trasa z kostką i przejściami bez danych o krawężnikach"}
+  - {from_q: "Floriańska 10", to_q: "Dworzec Główny", profile: senior, title: "Senior: ta sama trasa, inne ostrzeżenia (ławki, nachylenie)"}

@@ -120,6 +120,18 @@ Status licencji: **warunki sprawdzone**
 - **Jak weryfikujemy:** Zawsze oznaczone jako niezweryfikowane (pewność 0,3), pokazywane osobno od innych źródeł. Ograniczenie liczby zgłoszeń (10 na godzinę z jednego adresu), czyszczenie treści. Sprzeczność ze źródłem = status „sprzeczne”.
 - **Ograniczenia:** Możliwe nadużycia; weryfikacja (potwierdzenie przez właściciela lub kolejnych użytkowników) to kolejny etap.
 
+### Naloty dronem i kontrole terenowe (własne dane projektu)
+Status licencji: **DO POTWIERDZENIA**
+
+- **Do czego używamy:** Data ostatniego sprawdzenia terenu oraz obserwacje z góry: zastawione chodniki, remonty, zniszczona nawierzchnia, wąski chodnik (surveys.yaml, data/raw/survey_observations.json)
+- **Wydawca:** Zespół projektu / wykonawca nalotu
+- **Licencja / warunki:** Własne dane projektu; zasady udostępniania do ustalenia z wykonawcą nalotu i zleceniodawcą.
+- **Oznaczenie źródła:** Nalot dronem / kontrola terenowa: data w aplikacji
+- **Użycie komercyjne:** Własne dane projektu. W repozytorium jest tylko wpis PRZYKŁADOWY (demo: true), oznaczony tak w aplikacji; prawdziwe loty wymagają sprawdzenia przepisów i zgód (BIZNES.md, sekcja 5).
+- **Aktualność:** Cel: co 3 miesiące (interval_months). Dane starsze niż interwał są oznaczane jako nieświeże.
+- **Jak weryfikujemy:** Obserwacja z lotu to stan z dnia nalotu (nie fakt o dostępności miejsca); nie zmienia wyboru trasy, tylko dodaje ostrzeżenie z datą. Aplikacja pokazuje, czego nalot nie obejmuje (szerokość drzwi, stopnie pod zadaszeniem, wnętrza).
+- **Ograniczenia:** Dron nie widzi szerokości drzwi, stopni pod zadaszeniem, wnętrz ani niskich krawężników. Zdjęcia nie są publikowane (twarze, tablice rejestracyjne); w API są tylko punkty z typem.
+
 ## Źródła rozważone, jeszcze nieużyte
 
 - **Portal Otwarte Dane Krakowa i ArcGIS Hub ZTP** (https://otwartedane.um.krakow.pl): ZTP publikuje m.in. lokalizacje wiat przystankowych, trasy dojścia do przystanków i punkty SIM. Nie sprawdziliśmy ich zawartości pod kątem dostępności ani licencji. Kandydat do kolejnego etapu.

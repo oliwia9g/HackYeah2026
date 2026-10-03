@@ -153,7 +153,7 @@ def main() -> None:
         for i, p in enumerate(args.file):
             zips.append((f"plik{i + 1}", zipfile.ZipFile(p)))
     else:
-        for label, url in URLS.items():
+        for label, url in ((cfg.get("transit") or {}).get("gtfs") or URLS).items():
             try:
                 zips.append((label, download(url)))
             except requests.RequestException as e:

@@ -1,6 +1,7 @@
 """Wspólne helpery: konfiguracja, ścieżki, zapis GeoJSON."""
 from pathlib import Path
 import json
+import os
 
 import yaml
 
@@ -28,8 +29,18 @@ def _read_aoi(path: Path):
     return g.buffer(0)   # naprawia drobne bledy topologii
 
 
+def config_path() -> Path:
+    """Plik konfiguracji miasta: zmienna CITY_CONFIG (np. cities/wroclaw.yaml) albo domyslnie config.yaml (Krakow)."""
+    name = os.getenv("CITY_CONFIG") or "config.yaml"
+    p = Path(name)
+    p = p if p.is_absolute() else ROOT / p
+    if not p.exists():
+        raise FileNotFoundError(f"Brak pliku konfiguracji miasta: {p} (zmienna CITY_CONFIG={name!r})")
+    return p
+
+
 def load_config() -> dict:
-    with open(ROOT / "config.yaml", encoding="utf-8") as f:
+    with open(config_path(), encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     if cfg.get("aoi"):
         poly = _read_aoi(ROOT / cfg["aoi"])
@@ -69,13 +80,15 @@ def bbox_tuple(cfg: dict) -> tuple:
 
 
 def raw_dir(cfg: dict) -> Path:
-    p = ROOT / cfg["paths"]["raw"]
+    """Katalog danych surowych. Na serwerze mozna go przestawic zmienna DATA_RAW_DIR (np. dysk/wolumen)."""
+    p = Path(os.getenv("DATA_RAW_DIR") or (ROOT / cfg["paths"]["raw"]))
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def out_dir(cfg: dict) -> Path:
-    p = (ROOT / cfg["paths"]["out"]).resolve()
+    """Katalog danych wynikowych (GeoJSON/facts), z ktorego czyta API i front. Zmienna DATA_OUT_DIR przestawia go na serwerze."""
+    p = Path(os.getenv("DATA_OUT_DIR") or (ROOT / cfg["paths"]["out"])).resolve()
     p.mkdir(parents=True, exist_ok=True)
     return p
 
