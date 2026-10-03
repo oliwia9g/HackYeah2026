@@ -252,6 +252,10 @@
   border-color: var(--brand-turquoise);
 }
 
+:root[data-theme="dark"] .mini-tile .tile-icon img {
+  filter: invert(1);
+}
+
 :root[data-theme="dark"] .btn-secondary {
   color: var(--text-primary);
   border-color: var(--line-color);

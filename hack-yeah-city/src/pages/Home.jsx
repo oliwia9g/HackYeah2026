@@ -6,32 +6,32 @@ import "../Home.css";
 const profiles = [
   {
     id: "wozek_inwalidzki",
-    title: "Wózek inwalidzki",
+    title: "Osoba poruszająca się na wózku",
     icon: "/disabled.png",
   },
   {
     id: "wozek_dziecko",
-    title: "Wózek dziecięcy",
+    title: "Osoba z wózkiem dziecięcym",
     icon: "/little-kid.png",
   },
   {
     id: "niewidomy_slabowidzacy",
-    title: "Niewidomy / słabowidzący",
+    title: "Osoba niewidoma lub słabowidząca",
     icon: "/eye.png",
   },
   {
     id: "gluchy_niedoslyszacy",
-    title: "Głuchy / niedosłyszący",
+    title: "Osoba głucha lub niedosłysząca",
     icon: "/ear.png",
   },
   {
     id: "senior",
-    title: "Senior",
+    title: "Osoba starsza",
     icon: "/old-man.png",
   },
   {
     id: "ciaza",
-    title: "Ciąża",
+    title: "Kobieta w ciąży",
     icon: "/pregnant.png",
   },
 ];

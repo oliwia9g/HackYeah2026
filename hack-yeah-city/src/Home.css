@@ -338,6 +338,10 @@
   background: #403a52;
 }
 
+:root[data-theme="dark"] .tile-icon img {
+  filter: invert(1);
+}
+
 :root[data-theme="dark"] .profile-tile.selected .tile-icon {
   background: color-mix(in srgb, var(--tile-accent) 42%, #302b40);
 }

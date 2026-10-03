@@ -4,7 +4,7 @@ import '../ProfileSetup.css';
 
 const profileDanych = {
   wozek: {
-    nazwa: 'Wózek inwalidzki',
+    nazwa: 'Osoba poruszająca się na wózku',
     ikona: '/disabled.png',
     ustawienia: {
       bezSchodow: true,
@@ -19,7 +19,7 @@ const profileDanych = {
     }
   },
   wozek_dzieciecy: {
-    nazwa: 'Wózek dziecięcy',
+    nazwa: 'Osoba z wózkiem dziecięcym',
     ikona: '/little-kid.png',
     ustawienia: {
       bezSchodow: true,
@@ -34,7 +34,7 @@ const profileDanych = {
     }
   },
   wzrok: {
-    nazwa: 'Słabowidzący / Niewidomy',
+    nazwa: 'Osoba niewidoma lub słabowidząca',
     ikona: '/eye.png',
     ustawienia: {
       bezSchodow: false,
@@ -49,7 +49,7 @@ const profileDanych = {
     }
   },
   sluch: {
-    nazwa: 'Niedosłyszący',
+    nazwa: 'Osoba głucha lub niedosłysząca',
     ikona: '/ear.png',
     ustawienia: {
       bezSchodow: false,
@@ -64,7 +64,7 @@ const profileDanych = {
     }
   },
   senior: {
-    nazwa: 'Senior',
+    nazwa: 'Osoba starsza',
     ikona: '/old-man.png',
     ustawienia: {
       bezSchodow: false,
