@@ -1,5 +1,14 @@
 """Pobiera rozkłady ZTP Kraków (GTFS) i wycina z nich przystanki z obszaru demo.
 
+Wynik: raw/transit.json (do silnika/API) oraz public/data/transit_stops.geojson (warstwa dla frontu).
+
+Uruchomienie (z katalogu backend/):
+    python -m pipeline.fetch_gtfs                       # pobiera tramwaje i autobusy
+    python -m pipeline.fetch_gtfs --file tram.zip --file bus.zip   # z plikow pobranych recznie
+
+Zasady:
+- wheelchair_boarding / wheelchair_accessible: 1 = tak, 2 = nie, 0 lub puste = BRAK DANYCH (nigdy "dostepne").
+- To dane z ROZKLADU JAZDY, nie z pozycji pojazdow na zywo.
 """
 from __future__ import annotations
 
@@ -20,8 +29,18 @@ URLS = {
     "autobus": "https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip",
 }
 HEADERS = {"User-Agent": "HackYeah2026-krakow-bez-barier/0.1 (hackathon prototype)"}
-ROUTE_TYPE = {"0": "tramwaj", "3": "autobus", "1": "metro", "2": "kolej"}
-LICENSE = "dane publiczne ZTP Kraków (GTFS)"
+def route_mode(code, fallback: str) -> str:
+    """GTFS: 0 = tramwaj, 3 = autobus; rozszerzone kody 900-906 = tramwaj, 700-716 = autobus. Nieznany kod -> etykieta feedu."""
+    try:
+        c = int(code)
+    except (TypeError, ValueError):
+        return fallback
+    if c == 0 or 900 <= c <= 906:
+        return "tramwaj"
+    if c == 3 or 700 <= c <= 716:
+        return "autobus"
+    return {1: "metro", 2: "kolej"}.get(c, fallback)
+LICENSE = "otwarte dane ZTP Kraków - warunki licencji do potwierdzenia (patrz sources.yaml)"
 SOURCE_URL = "https://gtfs.ztp.krakow.pl/"
 
 
@@ -86,7 +105,7 @@ def build(zips: list[tuple[str, zipfile.ZipFile]], bbox: tuple) -> dict:
             stops_out[sid] = {
                 "id": sid, "gtfs_id": r.stop_id, "feed": label, "name": r.stop_name, "lon": float(r.lon), "lat": float(r.lat),
                 "wheelchair_boarding": _wc(w),
-                "mode": ROUTE_TYPE.get(sub["route_type"].mode().iat[0], "inne") if len(sub) else label,
+                "mode": route_mode(sub["route_type"].mode().iat[0], label) if len(sub) else label,
                 "lines": sorted(set(sub["route_short_name"])),
             }
         # trip_id -> (linia, kierunek): potrzebne do laczenia z danymi na zywo (GTFS-RT)
