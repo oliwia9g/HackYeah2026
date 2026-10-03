@@ -5,6 +5,42 @@ import proj4 from "proj4";
 
 const EPSG2180 = "+proj=tmerc +lat_0=0 +lon_0=19 +k=0.9993 +x_0=500000 +y_0=-5300000 +ellps=GRS80 +units=m +no_defs";
 
+function createModernMarker(color, label) {
+  const el = document.createElement("div");
+  el.style.width = "22px";
+  el.style.height = "22px";
+  el.style.borderRadius = "50%";
+  el.style.background = color;
+  el.style.border = "3px solid #ffffff";
+  el.style.boxShadow = "0 8px 18px rgba(15, 23, 42, 0.28)";
+  el.style.position = "relative";
+  el.style.display = "flex";
+  el.style.alignItems = "center";
+  el.style.justifyContent = "center";
+  el.style.fontSize = "10px";
+  el.style.fontWeight = "700";
+  el.style.color = "#ffffff";
+  el.style.lineHeight = "1";
+  el.textContent = label;
+  el.style.zIndex = "1";
+
+  const tail = document.createElement("div");
+  tail.style.position = "absolute";
+  tail.style.bottom = "-6px";
+  tail.style.left = "50%";
+  tail.style.transform = "translateX(-50%) rotate(45deg)";
+  tail.style.width = "10px";
+  tail.style.height = "10px";
+  tail.style.background = color;
+  tail.style.borderRight = "3px solid #ffffff";
+  tail.style.borderBottom = "3px solid #ffffff";
+  tail.style.borderRadius = "2px";
+  tail.style.zIndex = "-1";
+  el.appendChild(tail);
+
+  return el;
+}
+
 function transformGeometryToWgs84(geometry) {
   if (!geometry || !geometry.coordinates) return geometry;
 
@@ -54,6 +90,7 @@ export default function Map({
   initialZoom = 13,
   onPointsChange,
   routeData = null, // GeoJSON z trasą z API
+  theme = "light",
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -74,6 +111,7 @@ export default function Map({
       container: mapContainerRef.current,
       style: {
         version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
           "osm-tiles": {
             type: "raster",
@@ -94,8 +132,9 @@ export default function Map({
       },
       center: [initialLng, initialLat],
       zoom: initialZoom,
-      // obszar demo backendu (backend/config.yaml), z lekkim zapasem
       maxBounds: [[19.9, 50.03], [19.99, 50.09]],
+      pitch: 0,
+      bearing: 0,
     });
 
     mapRef.current = map;
@@ -121,7 +160,10 @@ export default function Map({
           map.removeSource("route-source");
         }
 
-        current.markerA = new maplibregl.Marker({ color: "#10b981" })
+        current.markerA = new maplibregl.Marker({
+          element: createModernMarker("#10b981", "A"),
+          anchor: "center",
+        })
           .setLngLat([coords.lng, coords.lat])
           .addTo(map);
 
@@ -130,7 +172,10 @@ export default function Map({
       }
       // 2. Drugie kliknięcie
       else if (current.pointA && !current.pointB) {
-        current.markerB = new maplibregl.Marker({ color: "#ef4444" })
+        current.markerB = new maplibregl.Marker({
+          element: createModernMarker("#ef4444", "B"),
+          anchor: "center",
+        })
           .setLngLat([coords.lng, coords.lat])
           .addTo(map);
 
@@ -156,6 +201,22 @@ export default function Map({
     const map = mapRef.current;
     if (!map) return;
 
+    const canvas = map.getCanvas();
+    if (canvas) {
+      canvas.style.filter = theme === "dark" ? "brightness(0.72) saturate(1.2) contrast(1.15)" : "none";
+      canvas.style.transition = "filter 0.2s ease";
+    }
+
+    const container = map.getContainer();
+    if (container) {
+      container.style.background = theme === "dark" ? "#020817" : "#edf2f7";
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
     const loadAoi = async () => {
       try {
         const response = await fetch(new URL("../assets/AOI_krk.geojson", import.meta.url));
@@ -173,8 +234,8 @@ export default function Map({
             type: "fill",
             source: "aoi-source",
             paint: {
-              "fill-color": "#22c55e",
-              "fill-opacity": 0.2,
+              "fill-color": "#7c3aed",
+              "fill-opacity": 0.16,
             },
           });
 
@@ -183,9 +244,9 @@ export default function Map({
             type: "line",
             source: "aoi-source",
             paint: {
-              "line-color": "#16a34a",
-              "line-width": 2,
-              "line-opacity": 0.9,
+              "line-color": "#a78bfa",
+              "line-width": 3,
+              "line-opacity": 0.95,
             },
           });
         }
@@ -304,9 +365,10 @@ export default function Map({
             "line-cap": "round",
           },
           paint: {
-            "line-color": "#2563eb",
+            "line-color": "#38bdf8",
             "line-width": 5,
-            "line-opacity": 0.85,
+            "line-opacity": 0.9,
+            "line-gap-width": 0,
           },
         });
       }
