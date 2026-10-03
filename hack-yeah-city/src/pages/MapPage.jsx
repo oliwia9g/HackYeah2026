@@ -70,6 +70,10 @@ export default function MapPage() {
   };
 
   const isReady = points.pointA && points.pointB;
+  const handlePointsChange = (nextPoints) => {
+    setPoints(nextPoints);
+    setRouteData(null);
+  };
 
   return (
     <div
@@ -163,7 +167,7 @@ export default function MapPage() {
             background: isDarkMode ? "#211e2d" : "#e6f6f8",
           }}
         >
-          <Map onPointsChange={setPoints} routeData={routeData} theme={theme} />
+          <Map onPointsChange={handlePointsChange} points={points} routeData={routeData} theme={theme} />
         </div>
 
         <div
