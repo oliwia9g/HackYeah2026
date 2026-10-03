@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Tile from "../components/Tile";
 import "../Home.css";
@@ -7,46 +7,47 @@ const profiles = [
   {
     id: "wozek_inwalidzki",
     title: "Wózek inwalidzki",
-    icon: "♿",
+    icon: "/disabled.png",
   },
   {
     id: "wozek_dziecko",
     title: "Wózek dziecięcy",
-    icon: "👶",
+    icon: "/little-kid.png",
   },
   {
     id: "niewidomy_slabowidzacy",
     title: "Niewidomy / słabowidzący",
-    icon: "👁️",
+    icon: "/eye.png",
   },
   {
     id: "gluchy_niedoslyszacy",
     title: "Głuchy / niedosłyszący",
-    icon: "🦻",
+    icon: "/ear.png",
   },
   {
     id: "senior",
     title: "Senior",
-    icon: "🧓",
+    icon: "/old-man.png",
   },
   {
     id: "ciaza",
     title: "Ciąża",
-    icon: "🤰",
+    icon: "/pregnant.png",
   },
 ];
 
 export default function Home() {
-  const [selectedProfile, setSelectedProfile] = useState(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
+  const [selectedProfile, setSelectedProfile] = useState(() => {
     const saved = localStorage.getItem("userAccessibilityProfile");
+    if (!saved) return null;
 
-    if (saved) {
-      setSelectedProfile(JSON.parse(saved));
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return saved;
     }
-  }, []);
+  });
+  const navigate = useNavigate();
 
   const handleSelect = (profileId) => {
     setSelectedProfile(profileId);
@@ -95,11 +96,18 @@ export default function Home() {
         <div className="action-section">
           <button
             type="button"
+            className="secondary-button"
+            onClick={() => navigate("/profil")}
+          >
+            Dostosuj profil i bariery
+          </button>
+          <button
+            type="button"
             className="primary-button"
             onClick={handleGoToMap}
             disabled={!selectedProfile}
           >
-            {selectedProfile ? "Przejdź do mapy" : "Wybierz profil, aby kontynuować"}
+            Przejdź do planowania trasy
           </button>
         </div>
 
