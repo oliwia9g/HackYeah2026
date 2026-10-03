@@ -161,7 +161,7 @@ export default function Map({
         }
 
         current.markerA = new maplibregl.Marker({
-          element: createModernMarker("#10b981", "A"),
+          element: createModernMarker("#58b6c6", "A"),
           anchor: "center",
         })
           .setLngLat([coords.lng, coords.lat])
@@ -173,7 +173,7 @@ export default function Map({
       // 2. Drugie kliknięcie
       else if (current.pointA && !current.pointB) {
         current.markerB = new maplibregl.Marker({
-          element: createModernMarker("#ef4444", "B"),
+          element: createModernMarker("#e15a4f", "B"),
           anchor: "center",
         })
           .setLngLat([coords.lng, coords.lat])
@@ -209,7 +209,7 @@ export default function Map({
 
     const container = map.getContainer();
     if (container) {
-      container.style.background = theme === "dark" ? "#020817" : "#edf2f7";
+      container.style.background = theme === "dark" ? "#211e2d" : "#e6f6f8";
     }
   }, [theme]);
 
@@ -234,7 +234,7 @@ export default function Map({
             type: "fill",
             source: "aoi-source",
             paint: {
-              "fill-color": "#7c3aed",
+              "fill-color": "#58b6c6",
               "fill-opacity": 0.16,
             },
           });
@@ -244,7 +244,7 @@ export default function Map({
             type: "line",
             source: "aoi-source",
             paint: {
-              "line-color": "#a78bfa",
+              "line-color": "#7a6cb1",
               "line-width": 3,
               "line-opacity": 0.95,
             },
@@ -365,7 +365,7 @@ export default function Map({
             "line-cap": "round",
           },
           paint: {
-            "line-color": "#38bdf8",
+            "line-color": "#e15a4f",
             "line-width": 5,
             "line-opacity": 0.9,
             "line-gap-width": 0,
