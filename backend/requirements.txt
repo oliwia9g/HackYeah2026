@@ -1,0 +1,12 @@
+osmnx>=2.0
+geopandas>=1.0
+pandas
+shapely>=2.0
+networkx
+pyyaml
+rasterio
+requests
+gtfs-realtime-bindings
+fastapi
+uvicorn[standard]
+httpx
