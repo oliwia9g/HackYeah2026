@@ -161,6 +161,121 @@ input {
 .content {
   padding: 40px;
 }
+
+.route-form {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex: 1 1 420px;
+  max-width: 640px;
+  padding: 6px;
+  border: 1px solid #d8d3e5;
+  border-radius: 16px;
+  background: #fffdf8;
+  box-shadow: 0 3px 12px rgba(122, 108, 177, 0.08);
+}
+
+.route-input {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 11px;
+  transition: background-color 0.2s ease;
+}
+
+.route-input + .route-input {
+  border-left: 1px solid #e7e2ed;
+}
+
+.route-input label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #4e4a56;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.route-input-marker {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #ffffff;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.route-input-marker-start {
+  background: #58b6c6;
+}
+
+.route-input-marker-end {
+  background: #e15a4f;
+}
+
+.route-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #000000;
+  font-size: 13px;
+}
+
+.route-input input::placeholder {
+  color: #8a8493;
+}
+
+.route-input:focus-within {
+  background: #f0edf7;
+}
+
+.route-form[data-theme="dark"] {
+  border-color: rgba(244, 204, 92, 0.35);
+  background: #302b40;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+}
+
+.route-form[data-theme="dark"] .route-input + .route-input {
+  border-left-color: #514a64;
+}
+
+.route-form[data-theme="dark"] .route-input label {
+  color: #d1cddd;
+}
+
+.route-form[data-theme="dark"] .route-input input {
+  color: #ffffff;
+}
+
+.route-form[data-theme="dark"] .route-input input::placeholder {
+  color: #aaa3b9;
+}
+
+.route-form[data-theme="dark"] .route-input:focus-within {
+  background: #3a344a;
+}
+
+@media (max-width: 650px) {
+  .route-form {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .route-input {
+    padding-inline: 7px;
+  }
+}
 * {
   box-sizing: border-box;
   margin: 0;
