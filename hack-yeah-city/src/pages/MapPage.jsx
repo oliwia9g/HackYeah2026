@@ -188,24 +188,25 @@ export default function MapPage() {
           isDarkMode={isDarkMode}
         />
 
-          <span
-            style={{
-              fontSize: "14px",
-              color: isDarkMode ? "#ffffff" : "#000000",
-              fontWeight: 500,
-              background: isDarkMode ? "#302b40" : "#e6f6f8",
-              border: isDarkMode ? "1px solid rgba(88, 182, 198, 0.5)" : "1px solid #58b6c6",
-              borderRadius: "999px",
-              padding: "8px 12px",
-            }}
-          >
-            {hasAddressInput && (!addresses.from.trim() || !addresses.to.trim()) &&
-              "Podaj adres początkowy i końcowy."}
-            {!hasAddressInput && !points.pointA && "Kliknij punkt startowy na mapie."}
-            {!hasAddressInput && points.pointA && !points.pointB && "Kliknij punkt docelowy na mapie."}
-            {isReady && !loading && !statusMessage && "Ustaw trasę i kliknij „Wyznacz trasę”."}
-            {statusMessage && statusMessage}
-          </span>
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: "14px",
+            color: isDarkMode ? "#ffffff" : "#000000",
+            fontWeight: 500,
+            background: isDarkMode ? "#302b40" : "#e6f6f8",
+            border: isDarkMode ? "1px solid rgba(88, 182, 198, 0.5)" : "1px solid #58b6c6",
+            borderRadius: "999px",
+            padding: "8px 12px",
+          }}
+        >
+          {hasAddressInput && (!addresses.from.trim() || !addresses.to.trim()) &&
+            "Podaj adres początkowy i końcowy."}
+          {!hasAddressInput && !points.pointA && "Kliknij punkt startowy na mapie."}
+          {!hasAddressInput && points.pointA && !points.pointB && "Kliknij punkt docelowy na mapie."}
+          {isReady && !loading && !statusMessage && "Ustaw trasę i kliknij „Wyznacz trasę”."}
+          {statusMessage && statusMessage}
+        </span>
         </div>
 
         <div
@@ -255,7 +256,7 @@ export default function MapPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ color: isDarkMode ? "#ffffff" : "#4e4a56" }}>Punkt A: nie wybrano</div>
+              <div style={{ color: isDarkMode ? "#ffffff" : "#4e4a56" }}>Punkt początkowy: nie wybrano</div>
             )}
           </div>
 
@@ -279,7 +280,7 @@ export default function MapPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ color: isDarkMode ? "#ffffff" : "#4e4a56" }}>Punkt B: nie wybrano</div>
+              <div style={{ color: isDarkMode ? "#ffffff" : "#4e4a56" }}>Punkt końcowy: nie wybrano</div>
             )}
           </div>
         </div>
