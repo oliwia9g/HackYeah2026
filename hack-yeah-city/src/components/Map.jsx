@@ -1,6 +1,88 @@
 import React, { useEffect, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import proj4 from "proj4";
+
+const EPSG2180 = "+proj=tmerc +lat_0=0 +lon_0=19 +k=0.9993 +x_0=500000 +y_0=-5300000 +ellps=GRS80 +units=m +no_defs";
+
+function createModernMarker(color, label) {
+  const el = document.createElement("div");
+  el.style.width = "22px";
+  el.style.height = "22px";
+  el.style.borderRadius = "50%";
+  el.style.background = color;
+  el.style.border = "3px solid #ffffff";
+  el.style.boxShadow = "0 8px 18px rgba(15, 23, 42, 0.28)";
+  el.style.position = "relative";
+  el.style.display = "flex";
+  el.style.alignItems = "center";
+  el.style.justifyContent = "center";
+  el.style.fontSize = "10px";
+  el.style.fontWeight = "700";
+  el.style.color = "#ffffff";
+  el.style.lineHeight = "1";
+  el.textContent = label;
+  el.style.zIndex = "1";
+
+  const tail = document.createElement("div");
+  tail.style.position = "absolute";
+  tail.style.bottom = "-6px";
+  tail.style.left = "50%";
+  tail.style.transform = "translateX(-50%) rotate(45deg)";
+  tail.style.width = "10px";
+  tail.style.height = "10px";
+  tail.style.background = color;
+  tail.style.borderRight = "3px solid #ffffff";
+  tail.style.borderBottom = "3px solid #ffffff";
+  tail.style.borderRadius = "2px";
+  tail.style.zIndex = "-1";
+  el.appendChild(tail);
+
+  return el;
+}
+
+function transformGeometryToWgs84(geometry) {
+  if (!geometry || !geometry.coordinates) return geometry;
+
+  const transformCoords = (coords) => {
+    if (!Array.isArray(coords)) return coords;
+
+    if (coords.length === 2 && typeof coords[0] === "number" && typeof coords[1] === "number") {
+      const [x, y] = proj4(EPSG2180, "WGS84", [coords[0], coords[1]]);
+      return [x, y];
+    }
+
+    return coords.map((item) => transformCoords(item));
+  };
+
+  return {
+    ...geometry,
+    coordinates: transformCoords(geometry.coordinates),
+  };
+}
+
+function transformAoiToWgs84(data) {
+  if (!data) return data;
+
+  if (data.type === "FeatureCollection") {
+    return {
+      ...data,
+      features: data.features.map((feature) => ({
+        ...feature,
+        geometry: transformGeometryToWgs84(feature.geometry),
+      })),
+    };
+  }
+
+  if (data.type === "Feature") {
+    return {
+      ...data,
+      geometry: transformGeometryToWgs84(data.geometry),
+    };
+  }
+
+  return transformGeometryToWgs84(data);
+}
 
 export default function Map({
   initialLng = 19.94,
@@ -8,6 +90,7 @@ export default function Map({
   initialZoom = 13,
   onPointsChange,
   routeData = null, // GeoJSON z trasą z API
+  theme = "light",
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -28,6 +111,7 @@ export default function Map({
       container: mapContainerRef.current,
       style: {
         version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
           "osm-tiles": {
             type: "raster",
@@ -48,8 +132,9 @@ export default function Map({
       },
       center: [initialLng, initialLat],
       zoom: initialZoom,
-      // obszar demo backendu (backend/config.yaml), z lekkim zapasem
       maxBounds: [[19.9, 50.03], [19.99, 50.09]],
+      pitch: 0,
+      bearing: 0,
     });
 
     mapRef.current = map;
@@ -75,7 +160,10 @@ export default function Map({
           map.removeSource("route-source");
         }
 
-        current.markerA = new maplibregl.Marker({ color: "#10b981" })
+        current.markerA = new maplibregl.Marker({
+          element: createModernMarker("#10b981", "A"),
+          anchor: "center",
+        })
           .setLngLat([coords.lng, coords.lat])
           .addTo(map);
 
@@ -84,7 +172,10 @@ export default function Map({
       }
       // 2. Drugie kliknięcie
       else if (current.pointA && !current.pointB) {
-        current.markerB = new maplibregl.Marker({ color: "#ef4444" })
+        current.markerB = new maplibregl.Marker({
+          element: createModernMarker("#ef4444", "B"),
+          anchor: "center",
+        })
           .setLngLat([coords.lng, coords.lat])
           .addTo(map);
 
@@ -105,6 +196,88 @@ export default function Map({
       loadedRef.current = false;
     };
   }, [initialLng, initialLat, initialZoom]); // POPRAWKA 1: Usunięcie onPointsChange z dependencies
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const canvas = map.getCanvas();
+    if (canvas) {
+      canvas.style.filter = theme === "dark" ? "brightness(0.72) saturate(1.2) contrast(1.15)" : "none";
+      canvas.style.transition = "filter 0.2s ease";
+    }
+
+    const container = map.getContainer();
+    if (container) {
+      container.style.background = theme === "dark" ? "#020817" : "#edf2f7";
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const loadAoi = async () => {
+      try {
+        const response = await fetch(new URL("../assets/AOI_krk.geojson", import.meta.url));
+        const rawAoi = await response.json();
+        const aoiData = transformAoiToWgs84(rawAoi);
+
+        if (!map.getSource("aoi-source")) {
+          map.addSource("aoi-source", {
+            type: "geojson",
+            data: aoiData,
+          });
+
+          map.addLayer({
+            id: "aoi-fill",
+            type: "fill",
+            source: "aoi-source",
+            paint: {
+              "fill-color": "#7c3aed",
+              "fill-opacity": 0.16,
+            },
+          });
+
+          map.addLayer({
+            id: "aoi-outline",
+            type: "line",
+            source: "aoi-source",
+            paint: {
+              "line-color": "#a78bfa",
+              "line-width": 3,
+              "line-opacity": 0.95,
+            },
+          });
+        }
+
+        const aoiCoords = aoiData.features?.[0]?.geometry?.coordinates;
+        if (aoiCoords) {
+          const flat = aoiCoords.flat(Infinity);
+          const points = [];
+          for (let i = 0; i < flat.length; i += 2) {
+            points.push([flat[i], flat[i + 1]]);
+          }
+
+          if (points.length > 0) {
+            const bounds = points.reduce(
+              (b, coord) => b.extend(coord),
+              new maplibregl.LngLatBounds(points[0], points[0])
+            );
+            map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load AOI layer:", error);
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      loadAoi();
+    } else {
+      map.once("load", loadAoi);
+    }
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -192,9 +365,10 @@ export default function Map({
             "line-cap": "round",
           },
           paint: {
-            "line-color": "#2563eb",
+            "line-color": "#38bdf8",
             "line-width": 5,
-            "line-opacity": 0.85,
+            "line-opacity": 0.9,
+            "line-gap-width": 0,
           },
         });
       }
