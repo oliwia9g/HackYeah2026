@@ -1,0 +1,25 @@
+# Rejestr nalotow dronem i kontroli terenowych (patrz engine/surveys.py). Po kazdym nalocie dopisz wpis.
+# Aplikacja pokazuje przy miejscach i trasach, KIEDY ostatnio sprawdzalismy dany obszar i czy dane sa swieze (domyslnie 3 miesiace).
+interval_months: 3
+
+surveys:
+  # UWAGA: ponizszy wpis jest PRZYKLADOWY (demo: true) i tak jest oznaczany w aplikacji. Zastap go prawdziwym nalotem
+  # albo usun, gdy nie bedzie czego pokazywac. Nie wolno prezentowac go jako prawdziwego nalotu.
+  - id: demo-2026-09
+    demo: true
+    type: dron                  # dron | spacer_terenowy | audyt
+    status: wykonany            # wykonany | zaplanowany
+    date: 2026-09-20
+    next_planned: 2026-12-20
+    area: null                  # null = caly obszar demo; albo sciezka do GeoJSON z wielokatem nalotu
+    operator: "PRZYKLAD"
+    method: "przykładowy opis: ortofotomapa ok. 2 cm/px, ręczna adnotacja przeszkód"
+    covers: [nawierzchnia, zastawione chodniki, remonty i wykopy, szerokość chodnika]
+    does_not_cover: [szerokość drzwi, stopnie pod zadaszeniem, wnętrza budynków, wysokość krawężnika poniżej kilku cm]
+
+  # Szablon kolejnego, zaplanowanego nalotu (odkomentuj i uzupelnij):
+  # - id: nalot-2026-12
+  #   type: dron
+  #   status: zaplanowany
+  #   date: 2026-12-20
+  #   area: aoi/nalot_stare_miasto.geojson

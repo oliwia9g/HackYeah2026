@@ -3,6 +3,9 @@
 Po co: tylko ok. 20% obiektow ma tag check_date. Pozostale dostana date ostatniej edycji
 (slabszy dowod, patrz pipeline/facts.py), zamiast calkiem bez daty.
 
+Uruchomienie (z katalogu backend/), PRZED pipeline.fetch_osm:
+    python -m pipeline.fetch_overpass_meta
+    python -m pipeline.fetch_osm        # ten sam krok co wczesniej - teraz uzyje dat z osm_meta.json
 """
 from __future__ import annotations
 
@@ -70,23 +73,41 @@ def fetch(query: str) -> dict:
             wait = 20 * (rnd + 1)
             print(f"wszystkie serwery zajete, czekam {wait} s i probuje ponownie...")
             time.sleep(wait)
-    print("Nie udalo sie pobrac danych z Overpass:", last_err)
-    print("To NIE blokuje reszty: pipeline.fetch_osm dziala tez bez osm_meta.json (daty tylko z check_date).")
-    sys.exit(1)
+    raise RuntimeError(last_err)
 
 
 def main() -> None:
     cfg = load_config()
-    elements = {}
+    raw = raw_dir(cfg)
+    part = raw / "osm_meta_partial.json"
+    elements, done = {}, []
+    if part.exists():   # wznowienie: klucze pobrane wczesniej nie sa pytane drugi raz
+        saved = json.loads(part.read_text("utf-8"))
+        elements, done = saved["elements"], saved["done"]
+        if done:
+            print(f"wznawiam - juz pobrane klucze: {', '.join(done)}")
     queries = build_queries(cfg)
     for i, (key, q) in enumerate(queries, 1):
+        if key in done:
+            continue
         print(f"[{i}/{len(queries)}] klucz: {key}")
-        data = fetch(q)
+        try:
+            data = fetch(q)
+        except RuntimeError as e:
+            part.write_text(json.dumps({"done": done, "elements": elements}), "utf-8")
+            print("Nie udalo sie pobrac klucza", key, "-", e)
+            print("Postep zapisany. Odczekaj kilka minut i uruchom to samo polecenie - ruszy od tego klucza.")
+            print("To NIE blokuje reszty: pipeline.fetch_osm dziala tez bez osm_meta.json.")
+            sys.exit(1)
         for e in data.get("elements", []):
             if e.get("timestamp"):
                 elements[f'{e["type"]}/{e["id"]}'] = {"timestamp": e["timestamp"], "version": e.get("version")}
+        done.append(key)
+        part.write_text(json.dumps({"done": done, "elements": elements}), "utf-8")
         print(f"  razem obiektow z data edycji: {len(elements)}")
-    out = raw_dir(cfg) / "osm_meta.json"
+        time.sleep(10)   # przerwa miedzy kluczami - unika limitu zapytan (HTTP 429)
+    out = raw / "osm_meta.json"
+    part.unlink(missing_ok=True)
     out.write_text(json.dumps({"fetched_at": date.today().isoformat(), "elements": elements}), "utf-8")
 
     years = sorted(int(v["timestamp"][:4]) for v in elements.values())
