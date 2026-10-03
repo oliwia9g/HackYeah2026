@@ -138,6 +138,12 @@
   transition: background 0.18s ease;
 }
 
+.tile-icon img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
 .profile-tile.selected .tile-icon {
   background: color-mix(in srgb, var(--tile-accent) 24%, white);
 }
@@ -166,9 +172,16 @@
 .action-section {
   display: flex;
   justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
   margin-top: 38px;
   padding-bottom: 34px;
   border-bottom: 1px solid var(--brand-border);
+}
+
+.action-section button {
+  min-height: 56px;
 }
 
 .primary-button {
@@ -183,6 +196,31 @@
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
   box-shadow: 0 14px 30px rgba(225, 90, 79, 0.2);
+}
+
+.secondary-button {
+  min-width: 240px;
+  padding: 16px 28px;
+  border: 2px solid var(--brand-purple);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.secondary-button:hover {
+  background: var(--surface-soft);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(122, 108, 177, 0.16);
+}
+
+.secondary-button:focus-visible,
+.primary-button:focus-visible {
+  outline: 3px solid var(--brand-turquoise);
+  outline-offset: 3px;
 }
 
 .primary-button:hover:not(:disabled) {
@@ -259,6 +297,59 @@
   line-height: 1.75;
 }
 
+:root[data-theme="dark"] .home {
+  background:
+    radial-gradient(circle at top, rgba(88, 182, 198, 0.12), transparent 38%),
+    var(--page-bg);
+}
+
+:root[data-theme="dark"] .eyebrow {
+  background: #3a344b;
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .home h1,
+:root[data-theme="dark"] .how-it-works h3,
+:root[data-theme="dark"] .mission-section h3,
+:root[data-theme="dark"] .profile-tile .tile-title {
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .hero-description,
+:root[data-theme="dark"] .subtitle,
+:root[data-theme="dark"] .step p,
+:root[data-theme="dark"] .mission-section p {
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .profile-tile,
+:root[data-theme="dark"] .step,
+:root[data-theme="dark"] .mission-section {
+  background: var(--surface);
+  border-color: var(--line-color);
+}
+
+:root[data-theme="dark"] .profile-tile.selected {
+  background: #3b354d;
+  border-color: var(--tile-accent);
+}
+
+:root[data-theme="dark"] .tile-icon {
+  background: #403a52;
+}
+
+:root[data-theme="dark"] .profile-tile.selected .tile-icon {
+  background: color-mix(in srgb, var(--tile-accent) 42%, #302b40);
+}
+
+:root[data-theme="dark"] .action-section {
+  border-color: var(--line-color);
+}
+
+:root[data-theme="dark"] .step span {
+  background: var(--brand-turquoise);
+}
+
 @media (max-width: 750px) {
   .tiles,
   .steps {
@@ -281,6 +372,11 @@
   }
 
   .primary-button {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .secondary-button {
     width: 100%;
     min-width: unset;
   }

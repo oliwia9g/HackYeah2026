@@ -1,10 +1,10 @@
 import { NavLink } from "react-router-dom";
 
-function Navbar() {
+function Navbar({ theme, onToggleTheme }) {
   return (
     <nav className="navbar">
       <NavLink to="/" className="navbar-logo">
-        <img src="/logo_ponad_bar.png" alt="Kraków Bez Barier" />
+        <img src="/logo_ponad_bar.png?v=2" alt="Kraków Bez Barier" />
       </NavLink>
 
       <div className="navbar-links">
@@ -14,7 +14,16 @@ function Navbar() {
             isActive ? "nav-link active" : "nav-link"
           }
         >
-          Home
+          Strona główna
+        </NavLink>
+
+        <NavLink
+          to="/profil"
+          className={({ isActive }) =>
+            isActive ? "nav-link active" : "nav-link"
+          }
+        >
+          Profil i Bariery
         </NavLink>
 
         <NavLink
@@ -23,9 +32,18 @@ function Navbar() {
             isActive ? "nav-link active" : "nav-link"
           }
         >
-          Map
+          Mapa
         </NavLink>
       </div>
+      <button
+        type="button"
+        className="theme-toggle"
+        onClick={onToggleTheme}
+        aria-label={theme === "dark" ? "Włącz jasny motyw" : "Włącz ciemny motyw"}
+        title={theme === "dark" ? "Włącz jasny motyw" : "Włącz ciemny motyw"}
+      >
+        {theme === "dark" ? "☀ Jasny" : "◐ Ciemny"}
+      </button>
     </nav>
   );
 }

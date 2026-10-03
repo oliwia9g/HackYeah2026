@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import Map from "../components/Map";
 import RouteForm from "../components/RouteForm";
 
-export default function MapPage() {
+export default function MapPage({ theme }) {
   const [points, setPoints] = useState({ pointA: null, pointB: null });
   const [routeData, setRouteData] = useState(null); // Tutaj zapisujemy trasę z API
   const [loading, setLoading] = useState(false);
@@ -27,7 +27,7 @@ export default function MapPage() {
     if (savedProfile) {
       try {
         profile = JSON.parse(savedProfile);
-      } catch (err) {
+      } catch {
         profile = savedProfile;
       }
     }
@@ -164,20 +164,6 @@ export default function MapPage() {
               {loading ? "Wyznaczanie trasy..." : "Wyznacz trasę"}
             </button>
 
-            <button
-              onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
-              style={{
-                padding: "10px 14px",
-                borderRadius: "999px",
-                border: isDarkMode ? "1px solid #58b6c6" : "1px solid #7a6cb1",
-                background: isDarkMode ? "#58b6c6" : "#f4cc5c",
-                color: "#000000",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              {isDarkMode ? "☀️ Light" : "🌙 Dark"}
-            </button>
           </div>
 
           
