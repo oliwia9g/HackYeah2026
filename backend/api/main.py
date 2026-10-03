@@ -1,8 +1,16 @@
 """API "Kraków bez barier" (FastAPI) - cienka warstwa na silniku (engine/) i danych (public/data/).
+
+Uruchomienie (z katalogu backend/):
+    pip install -r requirements.txt
+    uvicorn api.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+    # dokumentacja i test w przegladarce:  http://localhost:8000/docs
+
 Zmienne srodowiskowe:
     HACKYEAH_SEED=1   wstaw kilka PRZYKLADOWYCH zgloszen (oznaczone "dane demo") - do pokazu sprzecznosci danych
     HACKYEAH_DEV=0    wylacz endpointy deweloperskie (/api/dev/*) na wdrozeniu
 
+Zasady (z briefu): kazda informacja ma zrodlo, date i status; brak danych != dostepne;
+zgloszenia uzytkownikow sa niezweryfikowane i wyraznie odroznione; bez kont i bez danych osobowych.
 """
 from __future__ import annotations
 
@@ -21,7 +29,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from engine.profiles import PROFILES
-from engine.routing import Net
+from engine.routing import Net, as_set, kerb_info
+from engine.voice import parse_command
+from engine.multimodal import plan as plan_multimodal
 from engine.geocode import Geocoder
 from engine.realtime import Realtime
 from engine.transit import Transit
@@ -356,6 +366,31 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
             lon, lat, datetime.now(ZoneInfo("Europe/Warsaw")).replace(tzinfo=None),
             radius_m=radius, n=n, only_accessible=only_accessible), only_accessible)
 
+    def route_warnings(r, a, z, a_label, z_label, from_q, to_q) -> list:
+        warnings = []
+        for q_, lab in ((from_q, a_label), (to_q, z_label)):
+            if q_ and lab:
+                warnings.append(f"Adres „{q_}” rozpoznano jako: {lab}.")
+        if dist_m(a, r["coords"][0]) > 150 or dist_m(z, r["coords"][-1]) > 150:
+            warnings.append("Punkt startu lub celu jest daleko od sieci pieszej - trasa zaczyna się w najbliższym dostępnym miejscu.")
+        if r["pct_niepewne"] > 0:
+            warnings.append(f"{r['pct_niepewne']}% trasy ma niepełne dane - patrz kroki oznaczone UWAGA.")
+        if r.get("hazard_counts", {}).get("blokada"):
+            warnings.append("Ta trasa przechodzi przez przeszkody, których wybrany profil nie powinien pokonywać - patrz zagrożenia.")
+        if store.outage:
+            warnings.append("Źródło OpenStreetMap chwilowo niedostępne - dane z zapisu, mogą być nieaktualne.")
+        return warnings
+
+    ROUTE_PROPS = ("profile", "mode", "length_m", "time_min", "pct_niepewne", "pct_przeszkody", "steps", "max_do_lawki_m",
+                   "lawki_w_danych", "hazards", "hazard_counts", "narration")
+
+    def route_feature(r, a_label, z_label, warnings, extra=None) -> dict:
+        props = {k: r[k] for k in ROUTE_PROPS}
+        props.update(extra or {})
+        return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": r["coords"]},
+                "properties": {**props, "start_label": a_label, "end_label": z_label, "warnings": warnings,
+                               "atrybucja": ATTRIBUTION}}
+
     @app.get("/api/route")
     def route(from_lon: float | None = None, from_lat: float | None = None, from_place: str | None = None,
               to_lon: float | None = None, to_lat: float | None = None, to_place: str | None = None,
@@ -368,20 +403,123 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
         if r is None:
             raise HTTPException(404, detail={"message": "Nie znaleziono trasy dla tego profilu.",
                                              "hint": "W trybie 'strict' trasa może nie istnieć przy brakach danych. Spróbuj mode=warn."})
-        warnings = []
-        for q_, lab in ((from_q, a_label), (to_q, z_label)):
-            if q_ and lab:
-                warnings.append(f"Adres „{q_}” rozpoznano jako: {lab}.")
-        if dist_m(a, r["coords"][0]) > 150 or dist_m(z, r["coords"][-1]) > 150:
-            warnings.append("Punkt startu lub celu jest daleko od sieci pieszej - trasa zaczyna się w najbliższym dostępnym miejscu.")
-        if r["pct_niepewne"] > 0:
-            warnings.append(f"{r['pct_niepewne']}% trasy ma niepełne dane - patrz kroki oznaczone UWAGA.")
-        if store.outage:
-            warnings.append("Źródło OpenStreetMap chwilowo niedostępne - dane z zapisu, mogą być nieaktualne.")
-        props = {k: r[k] for k in ("profile", "mode", "length_m", "time_min", "pct_niepewne", "steps", "max_do_lawki_m", "lawki_w_danych")}
-        return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": r["coords"]},
-                "properties": {**props, "start_label": a_label, "end_label": z_label, "warnings": warnings,
-                               "atrybucja": ATTRIBUTION}}
+        return route_feature(r, a_label, z_label, route_warnings(r, a, z, a_label, z_label, from_q, to_q))
+
+    @app.get("/api/routes")
+    def routes(from_lon: float | None = None, from_lat: float | None = None, from_place: str | None = None,
+               to_lon: float | None = None, to_lat: float | None = None, to_place: str | None = None,
+               from_q: str | None = Query(None, max_length=100), to_q: str | None = Query(None, max_length=100),
+               profiles: str = ""):
+        """Kilka wariantow trasy do wyboru (najbardziej dostepna / zrownowazona / najkrotsza) z listami zagrozen.
+        Zagrozenia maja wspolrzedne (lon, lat) i odleglosc od startu (at_m) - do znacznikow na mapie i komunikatow glosowych."""
+        keys = parse_profiles(profiles)
+        (a, a_label), (z, z_label) = (resolve_q(from_q, from_lon, from_lat, from_place, "from"),
+                                      resolve_q(to_q, to_lon, to_lat, to_place, "to"))
+        alts = store.net.route_alternatives(a, z, keys)
+        if not alts:
+            raise HTTPException(404, detail={"message": "Nie znaleziono trasy dla tego profilu.",
+                                             "hint": "Punkty mogą leżeć w odciętych częściach sieci. Spróbuj innego początku lub celu."})
+        feats = []
+        for r in alts:
+            extra = {k: r[k] for k in ("id", "label", "recommended", "extra_m", "extra_pct", "tez_jako")}
+            feats.append(route_feature(r, a_label, z_label, route_warnings(r, a, z, a_label, z_label, from_q, to_q), extra))
+        return {"routes": feats, "recommended": next(r["id"] for r in alts if r["recommended"]),
+                "legenda_zagrozen": {"blokada": "przeszkoda nie do pokonania dla wybranego profilu",
+                                     "ostrzezenie": "utrudnienie", "brak_danych": "brak danych - nie wiadomo, czy jest przejezdnie"},
+                "uwaga": "Zagrożenia pochodzą z danych OSM i NMT; brak zagrożenia na liście nie gwarantuje, że go nie ma."}
+
+    @app.get("/api/plan")
+    def plan(from_lon: float | None = None, from_lat: float | None = None, from_place: str | None = None,
+             to_lon: float | None = None, to_lat: float | None = None, to_place: str | None = None,
+             from_q: str | None = Query(None, max_length=100), to_q: str | None = Query(None, max_length=100),
+             profiles: str = "", accessible_only: bool | None = None):
+        """Plan podrozy: spacer (z przeszkodami wg profilu) + tramwaj/autobus jednym kursem + spacer. Czas: teraz (Europe/Warsaw).
+        accessible_only: domyslnie wlaczone dla profili wozkowych (pokazujemy tylko pojazdy `yes`/`likely`)."""
+        keys = parse_profiles(profiles)
+        (a, a_label), (z, z_label) = (resolve_q(from_q, from_lon, from_lat, from_place, "from"),
+                                      resolve_q(to_q, to_lon, to_lat, to_place, "to"))
+        now = datetime.now(ZoneInfo("Europe/Warsaw")).replace(tzinfo=None, microsecond=0)
+        res = plan_multimodal(store.net, transit, realtime, a, z, keys, now, accessible_only)
+
+        def leg_feature(r, label):
+            return route_feature(r, a_label if label == "to" else None, z_label if label == "from" else None, [])
+        options = []
+        for o in res["options"]:
+            ride = o["ride"]
+            live = None
+            full = transit.stops.get(o.pop("_board_id"))
+            try:
+                if full:
+                    lv = realtime.live_for_stop(full, transit.trips, n=10)
+                    live = {**{k: lv.get(k) for k in ("available", "stale", "updated_at", "note", "reason", "source")},
+                            "departures": [d for d in lv.get("departures", []) if d.get("line") == ride["line"]][:3]}
+            except Exception:
+                live = {"available": False, "departures": []}
+            o["walk_to"], o["walk_from"] = leg_feature(o["walk_to"], "to"), leg_feature(o["walk_from"], "from")
+            o["live_at_board_stop"] = live
+            options.append(o)
+        wo = res["walk_only"]
+        walk_only = route_feature(wo, a_label, z_label, route_warnings(wo, a, z, a_label, z_label, from_q, to_q)) if wo else None
+        notes = list(res["notes"])
+        if wo and options and all(o["total_min"] >= wo["time_min"] for o in options):
+            notes.insert(0, "Pieszo jest szybciej niż komunikacją - pokazujemy przejazdy tylko jako opcję.")
+        return {"walk_only": walk_only, "options": options, "notes": notes, "accessible_only": res["accessible_only"],
+                "excluded_inaccessible": res["excluded_inaccessible"],
+                "uwaga": "Dostępność przystanków nie jest w danych ZTP. Pojazd: autobus = deklaracja MPK (prawdopodobnie), tramwaj = dane na żywo + typ taboru."}
+
+    @app.get("/api/kerbs")
+    def kerbs():
+        """Przejscia i krawezniki z klasa wysokosci (wysoki / obnizony / rowny / pochyly / brak_danych) - warstwa na mape."""
+        cf = out / "crossings.geojson"
+        if not cf.exists():
+            raise HTTPException(503, detail="Brak crossings.geojson (uruchom pipeline.fetch_osm)")
+        data = json.loads(cf.read_text("utf-8"))
+        feats = []
+        for f in data.get("features", []):
+            pr = f.get("properties", {})
+            if pr.get("kerb") is None and pr.get("highway") not in ("crossing",):
+                continue
+            ki = kerb_info(as_set(pr.get("kerb")))
+            feats.append({"type": "Feature", "geometry": f["geometry"],
+                          "properties": {"feature_id": pr.get("feature_id"), "kerb": pr.get("kerb"), "kerb_class": ki["class"],
+                                         "kerb_text": ki["text"], "tactile_paving": pr.get("tactile_paving"),
+                                         "crossing": pr.get("crossing"), "source": "OpenStreetMap",
+                                         "status": "niezweryfikowane" if ki["class"] != "brak_danych" else "brak"}})
+        counts = {}
+        for f in feats:
+            c = f["properties"]["kerb_class"]
+            counts[c] = counts.get(c, 0) + 1
+        return {"type": "FeatureCollection", "features": feats, "counts": counts,
+                "uwaga": "Wysokość krawężnika z OSM (kerb=*): wysoki >3 cm, obniżony do 3 cm, zrównany ok. 0 cm. Brak tagu = brak danych, nie ‚obniżony’."}
+
+    @app.get("/api/voice/command")
+    def voice_command(q: str = Query(..., min_length=1, max_length=200)):
+        """Polecenie glosowe (tekst z rozpoznawania mowy w przegladarce) -> intencja + gotowe wywolanie API + odpowiedz do przeczytania."""
+        cmd = parse_command(q)
+        out_ = {**cmd, "heard": q}
+        if cmd["intent"] == "route":
+            call = {"endpoint": "/api/routes", "params": {"profiles": ",".join(cmd.get("profiles", []))}}
+            miss = []
+            for key, qq in (("from", cmd.get("from_q")), ("to", cmd.get("to_q"))):
+                if not qq:
+                    continue
+                hits = geocode(q=qq, limit=1)["results"] if geocoder.available else []
+                if hits:
+                    h = hits[0]
+                    call["params"][f"{key}_lon"], call["params"][f"{key}_lat"] = h["lon"], h["lat"]
+                    out_.setdefault("resolved", {})[key] = h["label"]
+                else:
+                    miss.append(qq)
+            if miss:
+                out_["intent"] = "not_found"
+                out_["reply"] = "Nie znalazłam w obszarze demo: " + ", ".join(miss) + ". Spróbuj podać ulicę i numer."
+            else:
+                if cmd.get("from_gps"):
+                    call["needs_gps"] = "from"
+                out_["call"] = call
+        elif cmd["intent"] == "transit_nearby":
+            out_["call"] = {"endpoint": "/api/transit/nearby", "params": {}, "needs_gps": "lon,lat"}
+        return out_
 
     @app.get("/api/isochrone")
     def isochrone(lon: float, lat: float, profiles: str = "", minutes: float = Query(15, ge=1, le=30),

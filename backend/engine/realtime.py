@@ -76,6 +76,16 @@ class Realtime:
         self._cache[label] = c
         return c
 
+    def vehicle_for_trip(self, label: str, trip_id: str) -> dict | None:
+        """Pojazd obslugujacy kurs w tej chwili ({label, wheelchair}) albo None (brak danych / ZTP niedostepne)."""
+        if label not in FEEDS:
+            return None
+        try:
+            c = self._load(label)
+        except Exception:
+            return None
+        return c["vehicles"].get(trip_id) if c else None
+
     def live_for_stop(self, stop: dict, trips: dict, now_ts: float | None = None, n: int = 3,
                       only_accessible: bool = False) -> dict:
         """stop: wpis z transit.json (id "tramwaj:123", gtfs_id, feed)."""

@@ -14,7 +14,7 @@ import geopandas as gpd
 import osmnx as ox
 import pandas as pd
 
-from pipeline.common import load_aoi, load_config, out_dir, query_aoi, raw_dir, write_geojson
+from pipeline.common import load_aoi, load_config, out_dir, query_aoi, raw_dir, with_overpass_fallback, write_geojson
 from pipeline.facts import load_osm_meta, make_osm_facts
 
 # Tagi krawędzi (chodniki, przejścia, schody), które chcemy mieć w grafie
@@ -57,8 +57,8 @@ def fetch_graph(cfg: dict):
     # retain_all=True: nie wycinamy małych odizolowanych kawałków, bo to też dane
     # query_aoi = uproszczony wielokat AOI (krotkie zapytania); truncate_by_edge: krawedzie przecinajace brzeg zostaja,
     # dzieki czemu siec nie urywa sie przed brzegiem
-    G = ox.graph_from_polygon(
-        query_aoi(cfg), network_type=cfg["osm"]["network_type"], retain_all=True, truncate_by_edge=True
+    G = with_overpass_fallback(
+        ox.graph_from_polygon, query_aoi(cfg), network_type=cfg["osm"]["network_type"], retain_all=True, truncate_by_edge=True
     )
     nodes, edges = ox.graph_to_gdfs(G)
     nodes, edges = clip_network(nodes.reset_index(), edges.reset_index(), load_aoi(cfg))
@@ -75,7 +75,7 @@ def within_aoi(gdf, cfg: dict):
 
 def fetch_pois(cfg: dict) -> gpd.GeoDataFrame:
     print("pobieram POI z OSM...")
-    pois = ox.features_from_polygon(query_aoi(cfg), cfg["osm"]["poi_tags"])
+    pois = with_overpass_fallback(ox.features_from_polygon, query_aoi(cfg), cfg["osm"]["poi_tags"])
     pois = within_aoi(pois, cfg)
     print(f"  obiekty: {len(pois)}")
     return pois
@@ -84,7 +84,7 @@ def fetch_pois(cfg: dict) -> gpd.GeoDataFrame:
 def fetch_crossings(cfg: dict) -> gpd.GeoDataFrame:
     """Przejścia i krawężniki jako osobne obiekty (węzły) do audytu i warstw."""
     tags = {"highway": ["crossing", "traffic_signals", "elevator", "steps"], "kerb": True}
-    return within_aoi(ox.features_from_polygon(query_aoi(cfg), tags), cfg)
+    return within_aoi(with_overpass_fallback(ox.features_from_polygon, query_aoi(cfg), tags), cfg)
 
 
 # ---------- AUDYT POKRYCIA ----------

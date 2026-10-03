@@ -1,5 +1,12 @@
 """Silnik: ocena krawedzi per profil, trasa z opisem tekstowym, izochrona, status do mapy.
 
+Wejscie (z backend/data/raw/, tworzone przez pipeline.fetch_osm i pipeline.fetch_dem):
+    edges_incline.pkl (albo edges.pkl, jesli nie uruchomiono fetch_dem), nodes.pkl
+
+Uruchomienie demo (z katalogu backend/):
+    python -m engine.routing                # trasy + izochrony + status krawedzi -> public/data/
+    python -m engine.routing --strict       # tryb "tylko pewne": krawedzie z brakami danych wykluczone
+
 Statusy krawedzi:  0 = ok,  1 = niepewne (brak kluczowych danych, kara kosztu),  2 = zablokowane
 Zasada: brak danych NIGDY nie oznacza "dostepne" - krawedz dostaje status 1 i ostrzezenie.
 """
@@ -77,6 +84,35 @@ def first_str(v):
     if isinstance(v, list):
         v = v[0]
     return None if v is None else str(v)
+
+
+class Note(str):
+    """Uwaga o krawedzi: zwykly tekst + kod, waga i (opcjonalnie) wezel, ktorego dotyczy. Zgodna z kodem uzywajacym str.
+    waga: blokada | ostrzezenie | brak_danych | info (info nie trafia na liste zagrozen)."""
+    def __new__(cls, text: str, code: str = "info", sev: str = "info", node: int | None = None):
+        o = super().__new__(cls, text)
+        o.code, o.sev, o.node = code, sev, node
+        return o
+
+
+# Krawezniki wg definicji OSM (kerb=*): raised > 3 cm, lowered <= 3 cm, flush ~0 cm, rolled = pochyly/zaokraglony
+KERB_PL = {
+    "raised": ("wysoki", "wysoki krawężnik (powyżej 3 cm)"),
+    "lowered": ("obnizony", "obniżony krawężnik (do 3 cm)"),
+    "flush": ("rowny", "krawężnik zrównany z jezdnią"),
+    "rolled": ("pochyly", "krawężnik pochyły (zaokrąglony)"),
+    "no": ("brak", "bez krawężnika"),
+}
+
+
+def kerb_info(vals) -> dict:
+    """vals: zbior/lista wartosci kerb z OSM -> {class, text, values}. Najgorsza wartosc wygrywa (raised > rolled > lowered > flush)."""
+    vals = [v for v in as_set(vals)] if not isinstance(vals, (set, list, tuple)) else list(vals)
+    known = [v for v in ("raised", "rolled", "lowered", "flush", "no") if v in vals]
+    if not known:
+        return {"class": "brak_danych", "text": "brak danych o krawężniku", "values": sorted(vals)}
+    k = known[0]
+    return {"class": KERB_PL[k][0], "text": KERB_PL[k][1], "values": sorted(vals)}
 
 
 @dataclass
@@ -213,14 +249,14 @@ class Net:
         if kind == "schody":
             if hard.get("forbid_steps"):
                 blocked = True
-                notes.append("schody")
+                notes.append(Note("schody", "schody", "blokada"))
             else:
                 mult *= 1.8
                 if "stairs_no_handrail" in w and not (e["handrail"] - {"no"}):
                     mult *= w["stairs_no_handrail"]
-                    notes.append("schody bez potwierdzonej poręczy")
+                    notes.append(Note("schody bez potwierdzonej poręczy", "schody_bez_poreczy", "ostrzezenie"))
                 else:
-                    notes.append("schody")
+                    notes.append(Note("schody", "schody", "ostrzezenie"))
 
         # nachylenie
         max_inc = hard.get("max_incline_pct")
@@ -233,72 +269,77 @@ class Net:
                     reliable = src == "OSM" or (src == "NMT" and length >= NMT_RELIABLE_MIN_LEN_M)
                     if reliable:
                         blocked = True
-                        notes.append(f"nachylenie {pct:.0f}% (limit {max_inc:.0f}%, źródło: {src})")
+                        notes.append(Note(f"nachylenie {pct:.0f}% (limit {max_inc:.0f}%, źródło: {src})", "nachylenie", "blokada"))
                     else:
-                        notes.append(f"strome ({pct:.0f}%), ale to krótki odcinek z NMT - niepewne")
+                        notes.append(Note(f"strome ({pct:.0f}%), ale to krótki odcinek z NMT - niepewne", "nachylenie_niepewne", "ostrzezenie"))
             elif max_inc is not None:
                 uncertain = True
-                notes.append("brak danych o nachyleniu")
+                notes.append(Note("brak danych o nachyleniu"))
 
         # nawierzchnia
         if "surface_rough" in w and kind != "schody":
             if e["surface"] & ROUGH_SURFACE or e["smoothness"] & BAD_SMOOTHNESS:
                 mult *= w["surface_rough"]
-                notes.append("nawierzchnia nierówna: " + ", ".join(sorted((e["surface"] & ROUGH_SURFACE) or e["smoothness"])))
+                notes.append(Note("nawierzchnia nierówna: " + ", ".join(sorted((e["surface"] & ROUGH_SURFACE) or e["smoothness"])),
+                                  "nawierzchnia", "ostrzezenie"))
             elif e["surface"] & MILD_SURFACE:
                 mult *= w["surface_rough"] ** 0.5
-                notes.append("nawierzchnia: " + ", ".join(sorted(e["surface"] & MILD_SURFACE)))
+                notes.append(Note("nawierzchnia: " + ", ".join(sorted(e["surface"] & MILD_SURFACE))))
             elif not e["surface"] and not e["smoothness"] and kind == "chodnik":
                 uncertain = True
-                notes.append("brak danych o nawierzchni")
+                notes.append(Note("brak danych o nawierzchni"))
 
         # szerokosc
         if "min_width_m" in hard and e["width"] is not None and e["width"] < hard["min_width_m"]:
             blocked = True
-            notes.append(f"szerokość {e['width']:.1f} m < {hard['min_width_m']} m")
+            notes.append(Note(f"szerokość {e['width']:.1f} m < {hard['min_width_m']} m", "waski", "blokada"))
 
         # przejscia: krawezniki, prowadzenie dotykowe, sygnal dzwiekowy
         if e["is_crossing"]:
             kerbs = nu["kerb"] | nv["kerb"] | e["kerb"]
+            kn = e["u"] if "raised" in nu["kerb"] or (nu["kerb"] and not nv["kerb"]) else (e["v"] if nv["kerb"] else None)
+            ki = kerb_info(kerbs)
             if "require_kerb" in hard:
                 if kerbs & {"raised"}:
                     blocked = True
-                    notes.append("krawężnik podwyższony (OSM)")
+                    notes.append(Note("krawężnik podwyższony (OSM)", "krawezniki_wysoki", "blokada", kn))
                 elif kerbs:
                     if kerbs & {"rolled"}:
                         mult *= 1.3
-                    notes.append("krawężnik: " + ", ".join(sorted(kerbs)) + " (OSM)")
+                        notes.append(Note("krawężnik pochyły (OSM)", "krawezniki_pochyly", "ostrzezenie", kn))
+                    else:
+                        notes.append(Note("krawężnik: " + ki["text"] + " (OSM)"))
                 else:
                     uncertain = True
-                    notes.append("brak danych o krawężniku")
+                    notes.append(Note("brak danych o krawężniku", "krawezniki_brak_danych", "brak_danych"))
             if "no_tactile_paving" in w:
                 tactile = nu["tactile"] | nv["tactile"] | e["tactile"]
                 if "yes" in tactile:
-                    notes.append("prowadzenie dotykowe (OSM)")
+                    notes.append(Note("prowadzenie dotykowe (OSM)"))
                 elif "no" in tactile:
                     mult *= w["no_tactile_paving"]
-                    notes.append("brak prowadzenia dotykowego (OSM)")
+                    notes.append(Note("brak prowadzenia dotykowego (OSM)", "brak_prowadzenia", "ostrzezenie"))
                 else:
                     mult *= w["no_tactile_paving"] ** 0.5
                     uncertain = True
-                    notes.append("brak danych o prowadzeniu dotykowym")
+                    notes.append(Note("brak danych o prowadzeniu dotykowym", "prowadzenie_brak_danych", "brak_danych"))
             if "no_sound_signal" in w and (nu["signals"] or nv["signals"] or any("signal" in c for c in e["crossing_vals"])):
                 if "yes" in (nu["sound"] | nv["sound"]):
-                    notes.append("sygnalizacja dźwiękowa (OSM)")
+                    notes.append(Note("sygnalizacja dźwiękowa (OSM)"))
                 else:
                     mult *= w["no_sound_signal"]
-                    notes.append("sygnalizator bez potwierdzonego sygnału dźwiękowego")
+                    notes.append(Note("sygnalizator bez potwierdzonego sygnału dźwiękowego", "sygnalizator_bez_dzwieku", "ostrzezenie"))
 
         # odpoczynek: dlugi odcinek bez lawki (wg OSM) - tylko komfort, bez blokady i bez zmiany statusu
         if "long_segment_no_rest" in w and e.get("rest_dist") is not None and kind != "schody":
             lim = prof.get("bench_every_m", 300)
             if e["rest_dist"] > lim:
                 mult *= w["long_segment_no_rest"]
-                notes.append(f"ponad {int(lim)} m od najbliższej ławki (wg OSM)")
+                notes.append(Note(f"ponad {int(lim)} m od najbliższej ławki (wg OSM)", "brak_lawki", "ostrzezenie"))
 
         if "unlit" in w and e["lit"] & {"no"}:
             mult *= w["unlit"]
-            notes.append("brak oświetlenia")
+            notes.append(Note("brak oświetlenia", "brak_oswietlenia", "ostrzezenie"))
 
         status = 2 if blocked else (1 if uncertain else 0)
         if status == 1:
@@ -362,19 +403,83 @@ class Net:
         return coords
 
     # ---------- trasa ----------
-    def route(self, origin: tuple, dest: tuple, keys: list, mode: str = "warn"):
-        """origin/dest = (lon, lat). Zwraca dict (z opisem tekstowym krokow) albo None."""
-        v = self.view(keys, mode)
-        if not v.main:
+    HAZARD_SEV_ORDER = {"blokada": 0, "ostrzezenie": 1, "brak_danych": 2}
+    HAZARD_SPOKEN = {
+        "schody": "schody", "schody_bez_poreczy": "schody bez potwierdzonej poręczy",
+        "nachylenie": "stromy odcinek", "nachylenie_niepewne": "możliwy stromy odcinek",
+        "nawierzchnia": "nierówna nawierzchnia", "waski": "wąskie przejście",
+        "krawezniki_wysoki": "wysoki krawężnik", "krawezniki_pochyly": "pochyły krawężnik",
+        "krawezniki_brak_danych": "krawężnik bez danych o wysokości",
+        "brak_prowadzenia": "brak prowadzenia dotykowego", "prowadzenie_brak_danych": "brak danych o prowadzeniu dotykowym",
+        "sygnalizator_bez_dzwieku": "sygnalizator bez potwierdzonego sygnału dźwiękowego",
+        "brak_lawki": "długi odcinek bez ławki", "brak_oswietlenia": "brak oświetlenia",
+    }
+
+    def _hazards(self, legs: list, ev: View) -> list:
+        """Lista zagrozen na trasie z lokalizacja (lon/lat) i odlegloscia od startu. Kolejne krawedzie z tym samym
+        zagrozeniem (np. dluga kostka) sa laczone w jedno. Sprawdza wg profilu `ev`, niezaleznie od tego, jak trase wyznaczono."""
+        out, last_by_code, seen_nodes, pos = [], {}, set(), 0.0
+        for k, leg in enumerate(legs):
+            e = self.edges[leg["idx"]]
+            for n in ev.notes[leg["idx"]]:
+                sev = getattr(n, "sev", "info")
+                if sev not in self.HAZARD_SEV_ORDER:
+                    continue
+                code = n.code
+                if n.node is not None:          # zagrozenie w punkcie (krawezniki): jedno na wezel
+                    if n.node in seen_nodes:
+                        continue
+                    seen_nodes.add(n.node)
+                    lon, lat = self.xy[n.node]
+                    out.append({"type": code, "severity": sev, "text": str(n), "lon": lon, "lat": lat,
+                                "at_m": round(pos + (0 if n.node == e["u"] else e["length"])), "length_m": 0,
+                                "street": e["name"], "kind": e["kind"]})
+                    continue
+                prev = last_by_code.get(code)
+                if prev is not None and prev[0] == k - 1:   # ciagle od poprzedniej krawedzi
+                    prev[1]["length_m"] += round(e["length"])
+                    last_by_code[code] = (k, prev[1])
+                    continue
+                mid = e["geometry"].interpolate(0.5, normalized=True)
+                h = {"type": code, "severity": sev, "text": str(n), "lon": mid.x, "lat": mid.y,
+                     "at_m": round(pos), "length_m": round(e["length"]), "street": e["name"], "kind": e["kind"]}
+                out.append(h)
+                last_by_code[code] = (k, h)
+            pos += e["length"]
+        out.sort(key=lambda h: (h["at_m"], self.HAZARD_SEV_ORDER[h["severity"]]))
+        for i, h in enumerate(out, 1):
+            h["id"] = i
+            what = self.HAZARD_SPOKEN.get(h["type"], h["text"])
+            where = f" na ulicy {h['street']}" if h["street"] and h["kind"] in ("chodnik", "ulica") else ""
+            h["spoken"] = what[:1].upper() + what[1:] + where
+            h["source"] = "OSM/NMT" if h["type"] in ("nachylenie", "nachylenie_niepewne") else "OSM"
+            h["lon"], h["lat"] = round(h["lon"], 6), round(h["lat"], 6)
+        return out
+
+    @staticmethod
+    def _ahead(m: int) -> str:
+        """Zaokraglona odleglosc do komunikatu glosowego."""
+        if m < 15:
+            return "teraz"
+        step = 10 if m < 100 else 50
+        return f"za {int(round(m / step) * step)} metrów"
+
+    def route(self, origin: tuple, dest: tuple, keys: list, mode: str = "warn", route_keys: list | None = None):
+        """origin/dest = (lon, lat). Trase WYZNACZA widok (route_keys, mode); zagrozenia i kroki OCENIA profil `keys`.
+        Zwykle route_keys = keys. Dla trasy "najkrotszej" route_keys=[] - widac wtedy, co ja czeka na drodze."""
+        rv = self.view(keys if route_keys is None else route_keys, mode)
+        ev = self.view(keys, mode if route_keys is None else "warn")
+        if not rv.main:
             return None
-        s, t = self.nearest(*origin, v.main), self.nearest(*dest, v.main)
+        s, t = self.nearest(*origin, rv.main), self.nearest(*dest, rv.main)
         try:
-            path = nx.shortest_path(v.G, s, t, weight="cost")
+            path = nx.shortest_path(rv.G, s, t, weight="cost")
         except nx.NetworkXNoPath:
             return None
-        legs = [v.G[a][b] for a, b in zip(path, path[1:])]
+        legs = [rv.G[a][b] for a, b in zip(path, path[1:])]
+        st_ev = [ev.status[leg["idx"]] for leg in legs]     # lokalnie: widoki sa wspoldzielone miedzy watkami API
         coords, groups = [], []
-        for leg in legs:
+        for leg, st in zip(legs, st_ev):
             e = self.edges[leg["idx"]]
             c = self._oriented_coords(e)
             coords.extend(c if not coords else c[1:])
@@ -385,8 +490,8 @@ class Net:
                 g = {"key": gkey, "length": 0.0, "status": 0, "notes": []}
                 groups.append(g)
             g["length"] += e["length"]
-            g["status"] = max(g["status"], leg["status"])
-            for n in v.notes[leg["idx"]]:
+            g["status"] = max(g["status"], st)
+            for n in ev.notes[leg["idx"]]:
                 if n not in g["notes"]:
                     g["notes"].append(n)
         steps = []
@@ -400,21 +505,64 @@ class Net:
             else:
                 text = f"Idź {name or 'dalej'}, {m} m"
             if g["notes"]:
-                text += " - " + "; ".join(g["notes"])
-            if g["status"] == 1:
+                text += " - " + "; ".join(str(n) for n in g["notes"])
+            if g["status"] == 2:
+                text = "PRZESZKODA: " + text
+            elif g["status"] == 1:
                 text = "UWAGA (dane niepełne): " + text
-            steps.append({"text": text, "length_m": m, "status": g["status"], "notes": g["notes"]})
+            steps.append({"text": text, "length_m": m, "status": g["status"], "notes": [str(n) for n in g["notes"]]})
         total = sum(leg["length"] for leg in legs)
-        unc = sum(leg["length"] for leg in legs if leg["status"] == 1)
+        unc = sum(leg["length"] for leg, st in zip(legs, st_ev) if st == 1)
+        blk = sum(leg["length"] for leg, st in zip(legs, st_ev) if st == 2)
         speed = min([SPEED_KMH.get(k, BASE_SPEED_KMH) for k in keys]) if keys else BASE_SPEED_KMH
         rd = [self.edges[leg["idx"]]["rest_dist"] for leg in legs if self.edges[leg["idx"]].get("rest_dist") is not None]
+        hazards = self._hazards(legs, ev)
+        counts = {k: sum(1 for h in hazards if h["severity"] == k) for k in self.HAZARD_SEV_ORDER}
+        narration = [{"at_m": h["at_m"], "announce_at_m": max(0, h["at_m"] - 30), "lon": h["lon"], "lat": h["lat"],
+                      "text": h["spoken"], "severity": h["severity"], "hazard_id": h["id"]} for h in hazards]
         return {
             "max_do_lawki_m": round(max(rd)) if rd else None, "lawki_w_danych": self.rest_count,
-            "profile": v.label, "mode": mode, "length_m": round(total),
+            "profile": ev.label, "mode": mode, "length_m": round(total),
             "time_min": round(total / 1000 / speed * 60, 1),
             "pct_niepewne": round(100 * unc / total, 1) if total else 0.0,
-            "steps": steps, "coords": coords,
+            "pct_przeszkody": round(100 * blk / total, 1) if total else 0.0,
+            "steps": steps, "coords": coords, "hazards": hazards, "hazard_counts": counts,
+            "narration": narration, "path": tuple(leg["idx"] for leg in legs),
         }
+
+    def route_alternatives(self, origin: tuple, dest: tuple, keys: list) -> list:
+        """Do trzech wariantow trasy z listami zagrozen (wszystkie oceniane profilem `keys`):
+        - dostepna:    tylko odcinki z pelnymi danymi i bez barier (tryb strict) - najbezpieczniejsza, moze byc dluzsza
+        - zrownowazona: omija bariery, dopuszcza odcinki z brakami danych (z kara) - domyslna
+        - najkrotsza:  ignoruje bariery profilu - pokazuje, co czeka na najkrotszej drodze
+        Identyczne przebiegi sa scalane (wariant zachowuje liste `tez_jako`). Zwraca liste od najlepszej."""
+        specs = ([("dostepna", "Najbardziej dostępna (tylko pewne odcinki)", "strict", None),
+                  ("zrownowazona", "Zrównoważona (omija bariery)", "warn", None),
+                  ("najkrotsza", "Najkrótsza (pokazuje przeszkody)", "warn", [])] if keys else
+                 [("najkrotsza", "Najkrótsza", "warn", [])])
+        res = []
+        for rid, label, mode, rk in specs:
+            r = self.route(origin, dest, keys, mode, route_keys=rk)
+            if r is None:
+                continue
+            twin = next((x for x in res if x["path"] == r["path"]), None)
+            if twin is not None:
+                twin["tez_jako"].append(label)
+                continue
+            r.update({"id": rid, "label": label, "tez_jako": []})
+            res.append(r)
+        if not res:
+            return []
+        shortest = min(r["length_m"] for r in res)
+        for r in res:
+            r["extra_m"] = r["length_m"] - shortest
+            r["extra_pct"] = round(100 * r["extra_m"] / shortest, 1) if shortest else 0.0
+        # polecana = bez przeszkod, a z nich najmniej zagrozen i najkrotsza
+        res.sort(key=lambda r: (r["hazard_counts"]["blokada"], r["hazard_counts"]["ostrzezenie"] + r["hazard_counts"]["brak_danych"], r["length_m"]))
+        res[0]["recommended"] = True
+        for r in res[1:]:
+            r["recommended"] = False
+        return res
 
     # ---------- izochrona ----------
     def isochrone(self, origin: tuple, keys: list, minutes: float = 15, mode: str = "warn",

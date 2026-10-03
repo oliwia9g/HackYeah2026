@@ -2,6 +2,10 @@
 
 Wynik: raw/transit.json (do silnika/API) oraz public/data/transit_stops.geojson (warstwa dla frontu).
 
+Uruchomienie (z katalogu backend/):
+    python -m pipeline.fetch_gtfs                       # pobiera tramwaje i autobusy
+    python -m pipeline.fetch_gtfs --file tram.zip --file bus.zip   # z plikow pobranych recznie
+
 Zasady:
 - wheelchair_boarding / wheelchair_accessible: 1 = tak, 2 = nie, 0 lub puste = BRAK DANYCH (nigdy "dostepne").
 - To dane z ROZKLADU JAZDY, nie z pozycji pojazdow na zywo.
@@ -64,6 +68,7 @@ def build(zips: list[tuple[str, zipfile.ZipFile]], bbox: tuple, aoi=None) -> dic
     """zips: [(etykieta, ZipFile)]. bbox: (left, bottom, right, top). aoi: wielokat (shapely) - dokladniejszy filtr."""
     left, bottom, right, top = bbox
     stops_out, deps_out, services, exceptions, trips_out = {}, [], {}, {}, {}
+    trip_keys, tidx = [], {}   # numer kursu w odjazdach = indeks w trip_keys (laczy przystanki jednego kursu)
     for label, z in zips:
         stops = _read(z, "stops.txt")
         if stops.empty:
@@ -110,9 +115,12 @@ def build(zips: list[tuple[str, zipfile.ZipFile]], bbox: tuple, aoi=None) -> dic
         # trip_id -> (linia, kierunek): potrzebne do laczenia z danymi na zywo (GTFS-RT)
         for tid, line, head in df[["trip_id", "route_short_name", "trip_headsign"]].drop_duplicates("trip_id").itertuples(index=False):
             trips_out[f"{label}:{tid}"] = [line, head]
+            tidx[f"{label}:{tid}"] = len(trip_keys)
+            trip_keys.append(f"{label}:{tid}")
         for r in df.itertuples():
             deps_out.append([f"{label}:{r.stop_id}", int(r.sec), r.route_short_name, r.trip_headsign,
-                             _wc(r.wheelchair_accessible), f"{label}:{r.service_id}"])
+                             _wc(r.wheelchair_accessible), f"{label}:{r.service_id}",
+                             tidx[f"{label}:{r.trip_id}"]])
 
         cal = _read(z, "calendar.txt")
         for r in cal.itertuples():
@@ -124,7 +132,7 @@ def build(zips: list[tuple[str, zipfile.ZipFile]], bbox: tuple, aoi=None) -> dic
             exceptions.setdefault(f"{label}:{r.service_id}", {})[r.date] = int(r.exception_type)
 
     return {"generated_at": date.today().isoformat(), "source": "ZTP Kraków GTFS", "source_url": SOURCE_URL,
-            "license": LICENSE, "stops": stops_out, "trips": trips_out, "departures": deps_out, "services": services, "exceptions": exceptions}
+            "license": LICENSE, "stops": stops_out, "trips": trips_out, "trip_keys": trip_keys, "departures": deps_out, "services": services, "exceptions": exceptions}
 
 
 def download(url: str) -> zipfile.ZipFile:
@@ -170,8 +178,10 @@ def main() -> None:
     print(f"przystanki w obszarze demo: {len(data['stops'])} (dostepne: {n_wc}, brak danych: {n_unk}), "
           f"odjazdy w rozkladzie: {len(data['departures'])}")
     low = sum(1 for d in data["departures"] if d[4] == "yes")
-    print(f"  kursy niskopodlogowe: {low} ({100 * low / max(1, len(data['departures'])):.0f}%)")
-
+    print(f"  kursy z niską podłogą oznaczone W ROZKŁADZIE ZTP: {low} ({100 * low / max(1, len(data['departures'])):.0f}%)")
+    if low == 0:
+        print("  To oczekiwane: ZTP nie wypełnia tych pól w GTFS (same zera = brak danych). Dostępność pojazdów liczy API:")
+        print("  autobusy = deklaracja MPK (prawdopodobnie), tramwaje = dane na żywo ZTP + typ taboru (engine/fleet.py).")
 
 if __name__ == "__main__":
     main()
