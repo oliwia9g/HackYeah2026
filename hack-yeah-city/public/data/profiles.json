@@ -1,0 +1,68 @@
+{
+  "order": [
+    {
+      "key": "wozek_inwalidzki",
+      "label": "Wózek inwalidzki",
+      "needs": [
+        "windy",
+        "toalety_dostepne",
+        "szerokosc_wejscia",
+        "tramwaje_niskopodlogowe"
+      ]
+    },
+    {
+      "key": "wozek_dziecko",
+      "label": "Wózek z dzieckiem",
+      "needs": [
+        "przewijak",
+        "windy",
+        "toalety",
+        "tramwaje_niskopodlogowe"
+      ]
+    },
+    {
+      "key": "niewidomy_slabowidzacy",
+      "label": "Osoba niewidoma / słabowidząca",
+      "needs": [
+        "prowadzenie_dotykowe",
+        "sygnalizacja_dzwiekowa",
+        "oswietlenie",
+        "porecze"
+      ]
+    },
+    {
+      "key": "gluchy_niedoslyszacy",
+      "label": "Osoba głucha / niedosłysząca",
+      "needs": [
+        "petla_indukcyjna",
+        "informacja_wizualna",
+        "tlumacz_pjm"
+      ]
+    },
+    {
+      "key": "senior",
+      "label": "Senior",
+      "needs": [
+        "lawki",
+        "toalety",
+        "cien",
+        "tramwaje_niskopodlogowe"
+      ]
+    },
+    {
+      "key": "ciaza",
+      "label": "Kobieta w ciąży",
+      "needs": [
+        "lawki",
+        "toalety",
+        "apteki_przychodnie",
+        "tramwaje_niskopodlogowe"
+      ]
+    }
+  ],
+  "status_legend": {
+    "0": "ok",
+    "1": "niepewne (brak danych)",
+    "2": "zablokowane"
+  }
+}

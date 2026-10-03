@@ -1,0 +1,96 @@
+{
+  "bbox": {
+    "west": 19.924,
+    "south": 50.046,
+    "east": 19.962,
+    "north": 50.073
+  },
+  "edges_total": 29046,
+  "edges_footway_like": 21898,
+  "edges_tag_coverage": {
+    "surface": {
+      "count": 22886,
+      "pct": 78.8
+    },
+    "smoothness": {
+      "count": 4722,
+      "pct": 16.3
+    },
+    "incline": {
+      "count": 1080,
+      "pct": 3.7
+    },
+    "width": {
+      "count": 638,
+      "pct": 2.2
+    },
+    "kerb": {
+      "count": 4,
+      "pct": 0.0
+    },
+    "lit": {
+      "count": 14772,
+      "pct": 50.9
+    },
+    "tactile_paving": {
+      "count": 652,
+      "pct": 2.2
+    }
+  },
+  "poi_total": 12774,
+  "poi_tag_coverage": {
+    "wheelchair": {
+      "count": 971,
+      "pct": 7.6
+    },
+    "wheelchair:description": {
+      "count": 5,
+      "pct": 0.0
+    },
+    "door:width": {
+      "count": 0,
+      "pct": 0.0
+    },
+    "toilets:wheelchair": {
+      "count": 33,
+      "pct": 0.3
+    },
+    "entrance": {
+      "count": 7,
+      "pct": 0.1
+    },
+    "check_date": {
+      "count": 2530,
+      "pct": 19.8
+    },
+    "survey:date": {
+      "count": 74,
+      "pct": 0.6
+    }
+  },
+  "crossings_total": 2596,
+  "crossings_tag_coverage": {
+    "kerb": {
+      "count": 527,
+      "pct": 20.3
+    },
+    "tactile_paving": {
+      "count": 1765,
+      "pct": 68.0
+    },
+    "traffic_signals:sound": {
+      "count": 119,
+      "pct": 4.6
+    },
+    "traffic_signals:vibration": {
+      "count": 106,
+      "pct": 4.1
+    }
+  },
+  "poi_wheelchair_values": {
+    "yes": 491,
+    "no": 343,
+    "limited": 136,
+    "designated": 1
+  }
+}
