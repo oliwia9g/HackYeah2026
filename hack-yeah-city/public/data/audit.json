@@ -1,50 +1,50 @@
 {
   "bbox": {
-    "west": 19.924,
-    "south": 50.046,
-    "east": 19.962,
-    "north": 50.073
+    "west": 19.923765049910603,
+    "south": 50.044832830903474,
+    "east": 19.994735960194237,
+    "north": 50.104783110681424
   },
-  "edges_total": 29046,
-  "edges_footway_like": 21898,
+  "edges_total": 65206,
+  "edges_footway_like": 48184,
   "edges_tag_coverage": {
     "surface": {
-      "count": 22886,
-      "pct": 78.8
+      "count": 48464,
+      "pct": 74.3
     },
     "smoothness": {
-      "count": 4722,
-      "pct": 16.3
+      "count": 5752,
+      "pct": 8.8
     },
     "incline": {
-      "count": 1080,
-      "pct": 3.7
+      "count": 2378,
+      "pct": 3.6
     },
     "width": {
-      "count": 638,
-      "pct": 2.2
+      "count": 936,
+      "pct": 1.4
     },
     "kerb": {
       "count": 4,
       "pct": 0.0
     },
     "lit": {
-      "count": 14772,
-      "pct": 50.9
+      "count": 27468,
+      "pct": 42.1
     },
     "tactile_paving": {
-      "count": 652,
-      "pct": 2.2
+      "count": 1020,
+      "pct": 1.6
     }
   },
-  "poi_total": 12774,
+  "poi_total": 19653,
   "poi_tag_coverage": {
     "wheelchair": {
-      "count": 971,
-      "pct": 7.6
+      "count": 1220,
+      "pct": 6.2
     },
     "wheelchair:description": {
-      "count": 5,
+      "count": 4,
       "pct": 0.0
     },
     "door:width": {
@@ -52,45 +52,45 @@
       "pct": 0.0
     },
     "toilets:wheelchair": {
-      "count": 33,
-      "pct": 0.3
+      "count": 37,
+      "pct": 0.2
     },
     "entrance": {
-      "count": 7,
+      "count": 14,
       "pct": 0.1
     },
     "check_date": {
-      "count": 2530,
-      "pct": 19.8
+      "count": 2736,
+      "pct": 13.9
     },
     "survey:date": {
-      "count": 74,
+      "count": 122,
       "pct": 0.6
     }
   },
-  "crossings_total": 2596,
+  "crossings_total": 4177,
   "crossings_tag_coverage": {
     "kerb": {
-      "count": 527,
-      "pct": 20.3
+      "count": 974,
+      "pct": 23.3
     },
     "tactile_paving": {
-      "count": 1765,
-      "pct": 68.0
+      "count": 2613,
+      "pct": 62.6
     },
     "traffic_signals:sound": {
-      "count": 119,
+      "count": 194,
       "pct": 4.6
     },
     "traffic_signals:vibration": {
-      "count": 106,
-      "pct": 4.1
+      "count": 166,
+      "pct": 4.0
     }
   },
   "poi_wheelchair_values": {
-    "yes": 491,
-    "no": 343,
-    "limited": 136,
+    "yes": 635,
+    "no": 384,
+    "limited": 200,
     "designated": 1
   }
 }
