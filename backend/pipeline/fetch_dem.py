@@ -26,7 +26,7 @@ import rasterio
 import requests
 from pyproj import Transformer
 
-from pipeline.common import bbox_tuple, load_config, out_dir, raw_dir, write_geojson
+from pipeline.common import load_aoi, load_config, out_dir, raw_dir, write_geojson
 
 WCS_URL = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/NMT/GRID1/WCS/DigitalTerrainModelFormatTIFF"
 COVERAGE = "DTM_PL-KRON86-NH_TIFF"   # z GetCapabilities
@@ -34,22 +34,17 @@ CRS_M = "EPSG:2180"
 MIN_RELIABLE_LEN_M = 10.0            # krotsze krawedzie: nachylenie z NMT jest zaszumione
 
 
-def fetch_wcs(cfg: dict, res_m: float):
-    t = Transformer.from_crs("EPSG:4326", CRS_M, always_xy=True)
-    w, s, e, n = bbox_tuple(cfg)
-    pts = [t.transform(x, y) for x, y in [(w, s), (w, n), (e, s), (e, n)]]
-    xs, ys = zip(*pts)
-    pad = 50  # zapas, zeby krawedzie na brzegu mialy wysokosc
-    minx, maxx, miny, maxy = min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
-    width = int(math.ceil((maxx - minx) / res_m))
-    height = int(math.ceil((maxy - miny) / res_m))
+MAX_TILE_PX = 1500   # dluzszy bok pojedynczego zapytania WCS; wiekszy obszar pobieramy kafelkami
+
+
+def _get_tile(bbox: tuple, width: int, height: int):
+    minx, miny, maxx, maxy = bbox
     params = {
         "SERVICE": "WCS", "VERSION": "1.0.0", "REQUEST": "GetCoverage",
         "COVERAGE": COVERAGE, "CRS": CRS_M,
         "BBOX": f"{minx:.1f},{miny:.1f},{maxx:.1f},{maxy:.1f}",   # WCS 1.0.0: x,y (E,N)
         "WIDTH": width, "HEIGHT": height, "FORMAT": "image/tiff",
     }
-    print(f"pobieram NMT przez WCS ({width}x{height} px, {res_m} m)...")
     r = requests.get(WCS_URL, params=params, timeout=180)
     ctype = r.headers.get("content-type", "").lower()
     if r.status_code != 200 or "tif" not in ctype:
@@ -58,9 +53,51 @@ def fetch_wcs(cfg: dict, res_m: float):
         print(r.text[:1000])
         print("\nPlan B: pobierz NMT recznie z geoportal.gov.pl i uruchom z --file")
         sys.exit(1)
+    return r.content
+
+
+def fetch_wcs(cfg: dict, res_m: float):
+    """Pobiera NMT dla obszaru AOI. Duzy obszar dzielimy na kafelki (limity serwera) i sklejamy w jeden GeoTIFF."""
+    import shapely
+    from rasterio.io import MemoryFile
+    from rasterio.merge import merge
+    from shapely.ops import transform
+
+    t = Transformer.from_crs("EPSG:4326", CRS_M, always_xy=True)
+    minx, miny, maxx, maxy = transform(t.transform, load_aoi(cfg)).bounds
+    pad = 50  # zapas, zeby krawedzie na brzegu mialy wysokosc
+    minx, miny = minx - pad, miny - pad
+    ncols = int(math.ceil((maxx + pad - minx) / res_m))
+    nrows = int(math.ceil((maxy + pad - miny) / res_m))
+    tiles = [(c0, min(MAX_TILE_PX, ncols - c0), r0, min(MAX_TILE_PX, nrows - r0))
+             for r0 in range(0, nrows, MAX_TILE_PX) for c0 in range(0, ncols, MAX_TILE_PX)]
+    print(f"pobieram NMT przez WCS: {ncols}x{nrows} px ({res_m} m), kafelkow: {len(tiles)}...")
+    mems, dsets, size = [], [], 0
+    for i, (c0, w, r0, h) in enumerate(tiles, 1):
+        bbox = (minx + c0 * res_m, miny + r0 * res_m, minx + (c0 + w) * res_m, miny + (r0 + h) * res_m)
+        data = _get_tile(bbox, w, h)
+        size += len(data)
+        m = MemoryFile(data)
+        mems.append(m)
+        dsets.append(m.open())
+        print(f"  kafelek {i}/{len(tiles)} ok ({len(data) / 1e6:.1f} MB)")
     path = raw_dir(cfg) / "nmt.tif"
-    path.write_bytes(r.content)
-    print(f"zapisano {path} ({len(r.content) / 1e6:.1f} MB)")
+    if len(dsets) == 1:
+        path.write_bytes(mems[0].read())
+    else:
+        mosaic, transform_ = merge(dsets)
+        prof = dsets[0].profile
+        prof.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform_, count=mosaic.shape[0],
+                    compress="deflate", tiled=False)
+        prof.pop("blockxsize", None)
+        prof.pop("blockysize", None)
+        with rasterio.open(path, "w", **prof) as dst:
+            dst.write(mosaic)
+    for d in dsets:
+        d.close()
+    for m in mems:
+        m.close()
+    print(f"zapisano {path} ({size / 1e6:.1f} MB pobrane)")
     return path
 
 

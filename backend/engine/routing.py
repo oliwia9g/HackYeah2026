@@ -1,3 +1,8 @@
+"""Silnik: ocena krawedzi per profil, trasa z opisem tekstowym, izochrona, status do mapy.
+
+Statusy krawedzi:  0 = ok,  1 = niepewne (brak kluczowych danych, kara kosztu),  2 = zablokowane
+Zasada: brak danych NIGDY nie oznacza "dostepne" - krawedz dostaje status 1 i ostrzezenie.
+"""
 from __future__ import annotations
 
 import argparse
@@ -25,6 +30,8 @@ SPEED_KMH = {"wozek_inwalidzki": 3.6, "wozek_dziecko": 4.0, "niewidomy_slabowidz
              "gluchy_niedoslyszacy": 4.8, "senior": 3.2, "ciaza": 3.6}
 BASE_SPEED_KMH = 4.8
 NMT_RELIABLE_MIN_LEN_M = 25.0   # krotsze odcinki: nachylenie z NMT zaszumione, nie blokujemy
+REST_SNAP_M = 30.0              # lawka dalej niz tyle od najblizszego odcinka sieci nie jest brana pod uwage
+REST_AMENITIES = {"bench"}      # miejsca odpoczynku z OSM (amenity=bench); leisure=picnic_table tez
 
 
 # ---------- helpery do czyszczenia wartosci z OSM/pandas ----------
@@ -86,7 +93,7 @@ class View:
 
 
 class Net:
-    def __init__(self, edges: pd.DataFrame, nodes: pd.DataFrame):
+    def __init__(self, edges: pd.DataFrame, nodes: pd.DataFrame, rest_points: list | None = None):
         self.xy, self.ntags = {}, {}
         for r in nodes.to_dict("records"):
             oid = int(r["osmid"])
@@ -129,6 +136,49 @@ class Net:
                 "handrail": as_set(r.get("handrail")), "width": to_float(r.get("width")),
             })
         self._views: dict = {}
+        self._compute_rest(rest_points)
+
+    def _compute_rest(self, rest_points):
+        """Dla kazdej krawedzi: odleglosc (po sieci pieszej) do najblizszej lawki z OSM -> e["rest_dist"] (m).
+        Bez danych o lawkach rest_dist = None i regula odpoczynku w ogole nie dziala (nie karzemy za brak danych)."""
+        self.rest_count = len(rest_points or [])
+        self.rest_ready = self.rest_count > 0
+        for e in self.edges:
+            e["rest_dist"] = None
+        if not self.rest_ready:
+            return
+        from pyproj import Transformer
+        from shapely.ops import transform
+        tr = Transformer.from_crs(4326, 2180, always_xy=True).transform
+        geoms = [transform(tr, e["geometry"]) for e in self.edges]
+        tree = shapely.STRtree(geoms)
+        init: dict = {}
+        for lon, lat in rest_points:
+            pt = transform(tr, shapely.Point(lon, lat))
+            hit = tree.query_nearest(pt, max_distance=REST_SNAP_M, all_matches=False)
+            if len(hit) == 0:
+                continue
+            i = int(hit[0])
+            e, g = self.edges[i], geoms[i]
+            L = g.length or 1e-9
+            s_ = g.project(pt)
+            c0 = e["geometry"].coords[0]
+            ux, uy = self.xy[e["u"]]
+            vx, vy = self.xy[e["v"]]
+            if (c0[0] - ux) ** 2 + (c0[1] - uy) ** 2 > (c0[0] - vx) ** 2 + (c0[1] - vy) ** 2:
+                s_ = L - s_          # geometria biegnie od v do u
+            k = e["length"] / L
+            init[e["u"]] = min(init.get(e["u"], math.inf), s_ * k)
+            init[e["v"]] = min(init.get(e["v"], math.inf), (L - s_) * k)
+        H = nx.Graph()
+        for e in self.edges:
+            if not H.has_edge(e["u"], e["v"]) or H[e["u"]][e["v"]]["w"] > e["length"]:
+                H.add_edge(e["u"], e["v"], w=e["length"])
+        for n, d0 in init.items():
+            H.add_edge("_lawka", n, w=d0)
+        dist = nx.single_source_dijkstra_path_length(H, "_lawka", weight="w")
+        for e in self.edges:
+            e["rest_dist"] = min(dist.get(e["u"], math.inf), dist.get(e["v"], math.inf))
 
     @classmethod
     def from_files(cls, cfg: dict | None = None):
@@ -138,7 +188,16 @@ class Net:
         if not ep.exists():
             print("UWAGA: brak edges_incline.pkl - nachylenie tylko z tagow OSM (uruchom pipeline.fetch_dem)")
             ep = raw / "edges.pkl"
-        return cls(pd.read_pickle(ep), pd.read_pickle(raw / "nodes.pkl"))
+        rest = []
+        pf = out_dir(cfg) / "pois.geojson"
+        if pf.exists():
+            for f in json.loads(pf.read_text("utf-8")).get("features", []):
+                p, g = f.get("properties", {}), f.get("geometry") or {}
+                if g.get("type") == "Point" and (p.get("amenity") in REST_AMENITIES or p.get("leisure") == "picnic_table"):
+                    rest.append((g["coordinates"][0], g["coordinates"][1]))
+        else:
+            print("UWAGA: brak pois.geojson - regula odpoczynku (lawki) wylaczona")
+        return cls(pd.read_pickle(ep), pd.read_pickle(raw / "nodes.pkl"), rest)
 
     # ---------- ocena jednej krawedzi ----------
     def evaluate(self, e: dict, prof: dict):
@@ -230,6 +289,13 @@ class Net:
                     mult *= w["no_sound_signal"]
                     notes.append("sygnalizator bez potwierdzonego sygnału dźwiękowego")
 
+        # odpoczynek: dlugi odcinek bez lawki (wg OSM) - tylko komfort, bez blokady i bez zmiany statusu
+        if "long_segment_no_rest" in w and e.get("rest_dist") is not None and kind != "schody":
+            lim = prof.get("bench_every_m", 300)
+            if e["rest_dist"] > lim:
+                mult *= w["long_segment_no_rest"]
+                notes.append(f"ponad {int(lim)} m od najbliższej ławki (wg OSM)")
+
         if "unlit" in w and e["lit"] & {"no"}:
             mult *= w["unlit"]
             notes.append("brak oświetlenia")
@@ -259,7 +325,14 @@ class Net:
             if G.has_edge(e["u"], e["v"]) and G[e["u"]][e["v"]]["cost"] <= cost:
                 continue
             G.add_edge(e["u"], e["v"], cost=cost, length=e["length"], idx=i, status=st)
-        main = max(nx.weakly_connected_components(G), key=len) if G.number_of_nodes() else set()
+        comps = list(nx.weakly_connected_components(G))
+        main = max(comps, key=len) if comps else set()
+        # "wyspy dostepnosci" = kawalki sieci, ktore w sieci bazowej (pieszy bez ograniczen) naleza do
+        # glownej spojnej, a po zastosowaniu profilu sa od niej odciete. Fragmenty OSM, ktore sa
+        # rozlaczne juz w bazie (podworka, brzeg bbox), NIE sa liczone.
+        base = self.view([], mode).main if keys else main
+        islands = [c for c in comps if c is not main and (c & base)]
+        cut_pct = round(100 * len(base - main) / (len(base) or 1), 1)
         main_len = sum(d["length"] for a, b, d in G.edges(data=True) if a in main and b in main)
         all_len = sum(tot.values()) or 1.0
         stats = {
@@ -267,7 +340,7 @@ class Net:
             "dlugosc_zablokowana_km": round(tot[2] / 1000, 2),
             "pct_zablokowane": round(100 * tot[2] / all_len, 1),
             "pct_w_glownej_spojnej": round(100 * main_len / (sum(d["length"] for *_, d in G.edges(data=True)) or 1), 1),
-            "liczba_wysp": nx.number_weakly_connected_components(G),
+            "wyspy_dostepnosci": len(islands), "odciete_wezly_pct": cut_pct,
         }
         v = View(prof["label"], list(keys), mode, G, status, notes, set(main), stats)
         self._views[ck] = v
@@ -290,6 +363,7 @@ class Net:
 
     # ---------- trasa ----------
     def route(self, origin: tuple, dest: tuple, keys: list, mode: str = "warn"):
+        """origin/dest = (lon, lat). Zwraca dict (z opisem tekstowym krokow) albo None."""
         v = self.view(keys, mode)
         if not v.main:
             return None
@@ -333,7 +407,9 @@ class Net:
         total = sum(leg["length"] for leg in legs)
         unc = sum(leg["length"] for leg in legs if leg["status"] == 1)
         speed = min([SPEED_KMH.get(k, BASE_SPEED_KMH) for k in keys]) if keys else BASE_SPEED_KMH
+        rd = [self.edges[leg["idx"]]["rest_dist"] for leg in legs if self.edges[leg["idx"]].get("rest_dist") is not None]
         return {
+            "max_do_lawki_m": round(max(rd)) if rd else None, "lawki_w_danych": self.rest_count,
             "profile": v.label, "mode": mode, "length_m": round(total),
             "time_min": round(total / 1000 / speed * 60, 1),
             "pct_niepewne": round(100 * unc / total, 1) if total else 0.0,
@@ -341,12 +417,18 @@ class Net:
         }
 
     # ---------- izochrona ----------
-    def isochrone(self, origin: tuple, keys: list, minutes: float = 15, mode: str = "warn"):
+    def isochrone(self, origin: tuple, keys: list, minutes: float = 15, mode: str = "warn",
+                  equal_speed: bool = True):
+        """equal_speed=True: ta sama predkosc dla wszystkich profili, zeby kurczenie sie obszaru
+        wynikalo WYLACZNIE z barier, a nie z zalozonej wolniejszej chodzy."""
         v = self.view(keys, mode)
         if not v.main:
             return None
         s = self.nearest(*origin, v.main)
-        speed = min([SPEED_KMH.get(k, BASE_SPEED_KMH) for k in keys]) if keys else BASE_SPEED_KMH
+        if equal_speed or not keys:
+            speed = BASE_SPEED_KMH
+        else:
+            speed = min(SPEED_KMH.get(k, BASE_SPEED_KMH) for k in keys)
         limit = minutes / 60 * speed * 1000
         dist = nx.single_source_dijkstra_path_length(v.G, s, cutoff=limit + 0.5, weight="length")  # +0.5 m: tolerancja zaokraglen
         pts = [self.xy[n] for n in dist]
@@ -382,6 +464,45 @@ class Net:
             json.dump({"order": meta, "status_legend": {"0": "ok", "1": "niepewne (brak danych)", "2": "zablokowane"}},
                       f, ensure_ascii=False, indent=2)
 
+    # ---------- ranking barier ----------
+    def barrier_ranking(self, keys: list, top: int = 15, mode: str = "warn") -> list:
+        """Ktore zablokowane odcinki odcinaja najwiecej sieci od glownej spojnej?
+        Dla kazdej "wyspy dostepnosci" wybieramy najkrotszy blokujacy odcinek (najtanszy do naprawy)."""
+        v = self.view(keys, mode)
+        base = self.view([], mode).main
+        comps = list(nx.weakly_connected_components(v.G))
+        if not comps:
+            return []
+        main = max(comps, key=len)
+        comp_of = {n: i for i, c in enumerate(comps) for n in c}
+        main_id = comp_of[next(iter(main))]
+        comp_len: dict = {}
+        for a, _b, d in v.G.edges(data=True):
+            comp_len[comp_of[a]] = comp_len.get(comp_of[a], 0.0) + d["length"]
+        best: dict = {}
+        for i, e in enumerate(self.edges):
+            if v.status[i] != 2:
+                continue
+            a, b = comp_of.get(e["u"]), comp_of.get(e["v"])
+            if a is None or b is None or a == b or main_id not in (a, b):
+                continue
+            isl = b if a == main_id else a
+            gain = len(comps[isl] & base)
+            if gain < 5:
+                continue
+            if isl not in best or e["length"] < best[isl][1]["length"]:
+                best[isl] = (i, e, gain)
+        rows = []
+        for isl, (i, e, gain) in best.items():
+            mid = e["geometry"].interpolate(0.5, normalized=True)
+            rows.append({
+                "profil": v.label, "ulica": e["name"] or "(bez nazwy)", "rodzaj": e["kind"],
+                "powod": "; ".join(v.notes[i]) or "-", "odcina_wezlow": gain,
+                "odcina_m_sieci": round(comp_len.get(isl, 0.0) / 2),   # krawedzie sa dwukierunkowe
+                "lon": round(mid.x, 6), "lat": round(mid.y, 6)})
+        rows.sort(key=lambda r: -r["odcina_m_sieci"])
+        return rows[:top]
+
 
 # ---------- demo ----------
 DEMO = {"Dworzec Główny": (19.9477, 50.0680), "Rynek Główny": (19.9373, 50.0617),
@@ -403,7 +524,8 @@ def main() -> None:
     for k in PROFILES:
         s = net.view([k], mode).stats
         print(f"{PROFILES[k]['label']:34s} zablokowane {s['pct_zablokowane']:5.1f}% | "
-              f"niepewne {s['dlugosc_niepewna_km']:5.2f} km | wysp: {s['liczba_wysp']}")
+              f"niepewne {s['dlugosc_niepewna_km']:5.2f} km | odcięte węzły {s['odciete_wezly_pct']:4.1f}% "
+              f"| wyspy dostępności: {s['wyspy_dostepnosci']}")
 
     start, goal = DEMO["Dworzec Główny"], DEMO["Plac Nowy (Kazimierz)"]
     feats = []
@@ -421,7 +543,7 @@ def main() -> None:
     with open(out / "demo_routes.geojson", "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False)
 
-    print("\n=== IZOCHRONA 15 MIN od Dworca Głównego ===")
+    print("\n=== IZOCHRONA 15 MIN od Dworca Głównego (ta sama prędkość dla wszystkich = efekt samych barier) ===")
     iso_feats = []
     for keys in ([], *[[k] for k in PROFILES if k != "gluchy_niedoslyszacy"]):
         iso = net.isochrone(start, keys, 15, mode)
@@ -431,8 +553,24 @@ def main() -> None:
     with open(out / "isochrones.geojson", "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": iso_feats}, f, ensure_ascii=False)
 
+    print("\n=== RANKING BARIER (co najbardziej odcina sieć od głównej) ===")
+    bar_feats = []
+    for k in ("wozek_inwalidzki", "wozek_dziecko", "senior"):
+        rows = net.barrier_ranking([k], top=15, mode=mode)
+        print(f"-- {PROFILES[k]['label']}: {len(rows)} barier odcinających wyspy")
+        for rank, r in enumerate(rows, 1):
+            if rank <= 5:
+                print(f"   {rank}. {r['ulica']} ({r['rodzaj']}): odcina ok. {r['odcina_m_sieci']} m sieci "
+                      f"/ {r['odcina_wezlow']} węzłów - {r['powod']}")
+            bar_feats.append({"type": "Feature",
+                              "geometry": {"type": "Point", "coordinates": [r["lon"], r["lat"]]},
+                              "properties": {**{kk: vv for kk, vv in r.items() if kk not in ("lon", "lat")},
+                                             "profil_klucz": k, "ranking": rank}})
+    with open(out / "barriers.geojson", "w", encoding="utf-8") as f:
+        json.dump({"type": "FeatureCollection", "features": bar_feats}, f, ensure_ascii=False)
+
     net.export_edge_status(out / "edges_status.geojson")
-    print("\nZapisano: demo_routes.geojson, isochrones.geojson, edges_status.geojson, profiles.json")
+    print("\nZapisano: demo_routes.geojson, isochrones.geojson, barriers.geojson, edges_status.geojson, profiles.json")
 
 
 if __name__ == "__main__":

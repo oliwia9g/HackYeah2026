@@ -12,7 +12,7 @@ from datetime import date
 import osmnx as ox
 import pandas as pd
 
-from pipeline.common import bbox_tuple, load_config, raw_dir
+from pipeline.common import load_aoi, load_config, query_aoi, raw_dir
 
 
 def _s(v) -> str | None:
@@ -24,7 +24,8 @@ def _s(v) -> str | None:
 
 def fetch_addresses(cfg: dict) -> list[dict]:
     print("pobieram punkty adresowe z OSM...")
-    g = ox.features_from_bbox(bbox_tuple(cfg), {"addr:housenumber": True})
+    g = ox.features_from_polygon(query_aoi(cfg), {"addr:housenumber": True})
+    g = g[g.geometry.representative_point().within(load_aoi(cfg))]
     print(f"  obiektow z numerem: {len(g)}")
     pts = g.geometry.representative_point()
     out = []

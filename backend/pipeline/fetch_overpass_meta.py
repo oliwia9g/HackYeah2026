@@ -1,4 +1,8 @@
 """Pobiera z Overpass daty ostatniej edycji obiektow OSM (out meta) dla obszaru demo.
+
+Po co: tylko ok. 20% obiektow ma tag check_date. Pozostale dostana date ostatniej edycji
+(slabszy dowod, patrz pipeline/facts.py), zamiast calkiem bez daty.
+
 """
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from datetime import date
 
 import requests
 
-from pipeline.common import load_config, raw_dir
+from pipeline.common import load_config, query_aoi, raw_dir
 
 ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
@@ -21,16 +25,30 @@ ROUNDS = 3   # tyle razy przechodzimy cala liste serwerow (z coraz dluzsza przer
 HEADERS = {"User-Agent": "HackYeah2026-krakow-bez-barier/0.1 (hackathon prototype)"}
 
 
-def build_query(cfg: dict) -> str:
-    b = cfg["bbox"]
-    bb = f'{b["south"]},{b["west"]},{b["north"]},{b["east"]}'
-    parts = []
+def poly_filters(cfg: dict) -> list[str]:
+    """Filtry Overpass (poly:"lat lon lat lon ...") - po jednym na kazdy wielokat AOI."""
+    aoi = query_aoi(cfg)
+    parts = list(aoi.geoms) if aoi.geom_type == "MultiPolygon" else [aoi]
+    return ["(poly:\"" + " ".join(f"{y:.6f} {x:.6f}" for x, y in p.exterior.coords) + "\")" for p in parts]
+
+
+def build_queries(cfg: dict) -> list[tuple[str, str]]:
+    """Osobne, mniejsze zapytanie dla kazdego klucza tagu (amenity, shop, ...) - lzejsze dla serwera Overpass."""
+    out = []
     for key, val in cfg["osm"]["poi_tags"].items():
-        if val is True:
-            parts.append(f'nwr["{key}"]({bb});')
-        elif isinstance(val, list):
-            parts.append(f'nwr["{key}"~"^({"|".join(val)})$"]({bb});')
-    return f'[out:json][timeout:180];({"".join(parts)});out meta;'
+        parts = []
+        for flt in poly_filters(cfg):
+            if val is True:
+                parts.append(f'nwr["{key}"]{flt};')
+            elif isinstance(val, list):
+                parts.append(f'nwr["{key}"~"^({"|".join(val)})$"]{flt};')
+        out.append((key, f'[out:json][timeout:180];({"".join(parts)});out meta;'))
+    return out
+
+
+def build_query(cfg: dict) -> str:
+    """Jedno zapytanie ze wszystkimi kluczami (zostawione dla zgodnosci/testow)."""
+    return "".join(q for _, q in build_queries(cfg))
 
 
 def fetch(query: str) -> dict:
@@ -59,11 +77,15 @@ def fetch(query: str) -> dict:
 
 def main() -> None:
     cfg = load_config()
-    data = fetch(build_query(cfg))
     elements = {}
-    for e in data.get("elements", []):
-        if e.get("timestamp"):
-            elements[f'{e["type"]}/{e["id"]}'] = {"timestamp": e["timestamp"], "version": e.get("version")}
+    queries = build_queries(cfg)
+    for i, (key, q) in enumerate(queries, 1):
+        print(f"[{i}/{len(queries)}] klucz: {key}")
+        data = fetch(q)
+        for e in data.get("elements", []):
+            if e.get("timestamp"):
+                elements[f'{e["type"]}/{e["id"]}'] = {"timestamp": e["timestamp"], "version": e.get("version")}
+        print(f"  razem obiektow z data edycji: {len(elements)}")
     out = raw_dir(cfg) / "osm_meta.json"
     out.write_text(json.dumps({"fetched_at": date.today().isoformat(), "elements": elements}), "utf-8")
 

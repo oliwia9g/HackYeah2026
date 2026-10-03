@@ -1,5 +1,9 @@
 """Pobiera z OSM sieć pieszą + POI dla obszaru demo, robi audyt pokrycia tagów
 i eksportuje GeoJSON-y dla frontu.
+
+Uruchomienie (z katalogu backend/):
+    python -m pipeline.fetch_osm            # audyt + eksport
+    python -m pipeline.fetch_osm --audit    # tylko audyt (szybciej)
 """
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ import geopandas as gpd
 import osmnx as ox
 import pandas as pd
 
-from pipeline.common import bbox_tuple, load_config, out_dir, raw_dir, write_geojson
+from pipeline.common import load_aoi, load_config, out_dir, query_aoi, raw_dir, write_geojson
 from pipeline.facts import load_osm_meta, make_osm_facts
 
 # Tagi krawędzi (chodniki, przejścia, schody), które chcemy mieć w grafie
@@ -39,20 +43,40 @@ def configure_osmnx() -> None:
             ox.settings.useful_tags_node.append(t)
 
 
+def clip_network(nodes, edges, aoi):
+    """Zostawia tylko krawedzie, ktore maja cokolwiek wspolnego z AOI, i tylko ich wezly.
+    Krawedz przecinajaca granice zostaje w calosci (inaczej w sieci powstalyby dziury przy brzegu)."""
+    edges = edges[edges.geometry.intersects(aoi)]
+    used = set(edges["u"]) | set(edges["v"])
+    nodes = nodes[nodes["osmid"].isin(used)]
+    return nodes, edges
+
+
 def fetch_graph(cfg: dict):
     print("pobieram graf pieszy z OSM...")
     # retain_all=True: nie wycinamy małych odizolowanych kawałków, bo to też dane
-    G = ox.graph_from_bbox(
-        bbox_tuple(cfg), network_type=cfg["osm"]["network_type"], retain_all=True
+    # query_aoi = uproszczony wielokat AOI (krotkie zapytania); truncate_by_edge: krawedzie przecinajace brzeg zostaja,
+    # dzieki czemu siec nie urywa sie przed brzegiem
+    G = ox.graph_from_polygon(
+        query_aoi(cfg), network_type=cfg["osm"]["network_type"], retain_all=True, truncate_by_edge=True
     )
     nodes, edges = ox.graph_to_gdfs(G)
-    print(f"  węzły: {len(nodes)}, krawędzie: {len(edges)}")
-    return G, nodes.reset_index(), edges.reset_index()
+    nodes, edges = clip_network(nodes.reset_index(), edges.reset_index(), load_aoi(cfg))
+    print(f"  węzły: {len(nodes)}, krawędzie: {len(edges)} (po przycięciu do AOI)")
+    return G, nodes, edges
+
+
+def within_aoi(gdf, cfg: dict):
+    """Zostawia obiekty, ktorych punkt reprezentatywny lezy w AOI (Overpass bywa hojny na brzegu)."""
+    if gdf.empty:
+        return gdf
+    return gdf[gdf.geometry.representative_point().within(load_aoi(cfg))]
 
 
 def fetch_pois(cfg: dict) -> gpd.GeoDataFrame:
     print("pobieram POI z OSM...")
-    pois = ox.features_from_bbox(bbox_tuple(cfg), cfg["osm"]["poi_tags"])
+    pois = ox.features_from_polygon(query_aoi(cfg), cfg["osm"]["poi_tags"])
+    pois = within_aoi(pois, cfg)
     print(f"  obiekty: {len(pois)}")
     return pois
 
@@ -60,7 +84,7 @@ def fetch_pois(cfg: dict) -> gpd.GeoDataFrame:
 def fetch_crossings(cfg: dict) -> gpd.GeoDataFrame:
     """Przejścia i krawężniki jako osobne obiekty (węzły) do audytu i warstw."""
     tags = {"highway": ["crossing", "traffic_signals", "elevator", "steps"], "kerb": True}
-    return ox.features_from_bbox(bbox_tuple(cfg), tags)
+    return within_aoi(ox.features_from_polygon(query_aoi(cfg), tags), cfg)
 
 
 # ---------- AUDYT POKRYCIA ----------
@@ -122,6 +146,13 @@ def print_audit(a: dict) -> None:
 def export(cfg, nodes, edges, pois, crossings) -> None:
     out = out_dir(cfg)
     raw = raw_dir(cfg)
+
+    # obrys obszaru demo dla frontu (WGS84)
+    import shapely
+    from shapely.geometry import mapping
+    (out / "area.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Obszar demo"}, "geometry": mapping(shapely.set_precision(load_aoi(cfg), 1e-6))}]},
+        ensure_ascii=False), "utf-8")
 
     # surowe pliki (nie idą do gita)
     edges.to_pickle(raw / "edges.pkl")

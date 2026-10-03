@@ -69,6 +69,45 @@ Status licencji: **DO POTWIERDZENIA**
 - **Jak weryfikujemy:** Flaga dostępności pochodzi od operatora i dotyczy pojazdu obsługującego kurs w tej chwili. Autobusy: brak danych (nie zgadujemy). Przy awarii źródła pokazujemy komunikat i sam rozkład.
 - **Ograniczenia:** Brak pola opóźnienia w większości wpisów. Kursy dalej w przyszłości często bez przypisanego pojazdu.
 
+### Deklaracja MPK Kraków: autobusy niskopodłogowe od 2018 r.
+Adres: https://mpk.krakow.pl/artykul/13/dostepnosc-dla-osob-z-ograniczona-mobilnoscia
+Status licencji: **DO POTWIERDZENIA**
+
+- **Do czego używamy:** Autobusy: ocena „prawdopodobnie dostępny” (GTFS ZTP nie ma pola niskiej podłogi)
+- **Wydawca:** Miejskie Przedsiębiorstwo Komunikacyjne S.A. w Krakowie
+- **Licencja / warunki:** Informacja ze strony przewoźnika (nie zbiór danych); warunki ponownego wykorzystania do potwierdzenia
+- **Oznaczenie źródła:** Źródło: MPK Kraków
+- **Użycie komercyjne:** DO POTWIERDZENIA. Używamy faktu (deklaracji), nie kopiujemy tekstu.
+- **Aktualność:** Strona bez daty publikacji, stan sprawdzony 2026-10-03.
+- **Jak weryfikujemy:** Status „prawdopodobne”, nigdy „potwierdzone”: to deklaracja dla całej floty, nie sprawdzenie pojazdu. Flaga ZTP na żywo (jeśli jest) ma pierwszeństwo.
+- **Ograniczenia:** Rampa może być niesprawna; część linii obsługują inni przewoźnicy (np. Mobilis); dostępność pojazdu to nie dostępność przystanku.
+
+### Wykaz taboru tramwajowego (numer taborowy -> typ), TTSS
+Adres: https://api.ttss.pl/vehicles/trams/
+Status licencji: **DO POTWIERDZENIA**
+
+- **Do czego używamy:** Sprawdzenie flagi ZTP dla tramwaju: typ taboru (niska/wysoka podłoga) vs flaga na żywo; wykrywanie sprzeczności
+- **Wydawca:** Serwis społecznościowy api.ttss.pl (dane o taborze Krakowa)
+- **Licencja / warunki:** Brak informacji o licencji; źródło nieoficjalne
+- **Oznaczenie źródła:** Źródło: api.ttss.pl (wykaz taboru)
+- **Użycie komercyjne:** DO POTWIERDZENIA. Wykaz mamy zapisany lokalnie (engine/data/tram_fleet.csv), strona nie jest odpytywana na żywo.
+- **Aktualność:** Stan z 2026-10-03; tabor się zmienia - odświeżać okresowo.
+- **Jak weryfikujemy:** Przypisanie typ -> podłoga (niska/wysoka) to nasza klasyfikacja do potwierdzenia u MPK. Rozbieżność z flagą ZTP pokazujemy jako „sprzeczne dane”.
+- **Ograniczenia:** Źródło nieoficjalne; nie wszystkie pojazdy muszą być na liście.
+
+### Granica obszaru demo (obręb Kraków-Śródmieście)
+Adres: https://www.geoportal.gov.pl
+Status licencji: **DO POTWIERDZENIA**
+
+- **Do czego używamy:** Wielokąt, do którego przycinamy wszystkie dane (trasy, miejsca, adresy, przystanki)
+- **Wydawca:** GUGiK / Państwowy Rejestr Granic (wg atrybutów pliku: PL.PZGIK.200, EGIB)
+- **Licencja / warunki:** Plik przekazany przez zespół; warunki wykorzystania Państwowego Rejestru Granic do potwierdzenia
+- **Oznaczenie źródła:** Źródło: GUGiK, Państwowy Rejestr Granic
+- **Użycie komercyjne:** DO POTWIERDZENIA na stronie PRG / Geoportalu.
+- **Aktualność:** Granica jednostki ewidencyjnej; data pliku do uzupełnienia.
+- **Jak weryfikujemy:** Powierzchnia z geometrii (17,84 km²) zgadza się z atrybutem JPT_POWIER = 1787 ha.
+- **Ograniczenia:** Granica administracyjna, a nie obszar chodzenia pieszego: trasy przy brzegu mogą urywać się na granicy.
+
 ### Zgłoszenia użytkowników
 Status licencji: **warunki sprawdzone**
 

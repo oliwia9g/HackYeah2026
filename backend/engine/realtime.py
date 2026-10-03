@@ -3,7 +3,7 @@
 - TripUpdates_{T,A}.pb      -> prognozowane przyjazdy na przystanki
 - VehiclePositions_{T,A}.pb -> pojazd (numer, flaga wheelchair_accessible), laczone po trip_id
 
-flaga dostepnosci pochodzi od operatora i dotyczy POJAZDU, ktory teraz obsluguje kurs
+Zasady: flaga dostepnosci pochodzi od operatora i dotyczy POJAZDU, ktory teraz obsluguje kurs
 (moze sie zmienic). Brak flagi = "brak danych", nigdy "dostepne". Gdy ZTP nie odpowiada,
 zwracamy ostatnie dane z cache oznaczone jako nieswieze, a gdy nie ma nic - jawny komunikat.
 """
@@ -14,6 +14,8 @@ from datetime import datetime
 
 import requests
 from zoneinfo import ZoneInfo
+
+from engine.fleet import OK, vehicle_access
 
 TZ = ZoneInfo("Europe/Warsaw")
 BASE = "https://gtfs.ztp.krakow.pl/"
@@ -91,13 +93,13 @@ class Realtime:
             if ts < now_ts - 30:
                 continue
             veh = c["vehicles"].get(trip_id)
-            wc = veh["wheelchair"] if veh else "unknown"
-            if only_accessible and wc != "yes":
+            acc = vehicle_access(stop.get("feed"), veh["wheelchair"] if veh else "unknown", veh["label"] if veh else None)
+            if only_accessible and acc["wheelchair"] not in OK:
                 continue
             line, head = trips.get(f"{label}:{trip_id}", [None, None])
             rows.append({"time": datetime.fromtimestamp(ts, TZ).strftime("%H:%M"), "in_min": max(0, int((ts - now_ts) // 60)),
                          "line": line, "headsign": head, "delay_s": delay, "vehicle": veh["label"] if veh else None,
-                         "wheelchair": wc, "wheelchair_text": WC_TEXT[wc]})
+                         **acc})
             if len(rows) >= n:
                 break
         return {"available": True, "stale": stale, "updated_at": datetime.fromtimestamp(c["at"], TZ).strftime("%H:%M:%S"),

@@ -67,6 +67,45 @@ used:
     verification: "Flaga dostępności pochodzi od operatora i dotyczy pojazdu obsługującego kurs w tej chwili. Autobusy: brak danych (nie zgadujemy). Przy awarii źródła pokazujemy komunikat i sam rozkład."
     limitations: "Brak pola opóźnienia w większości wpisów. Kursy dalej w przyszłości często bez przypisanego pojazdu."
     retrieved_from_file: null
+  - id: mpk_fleet
+    name: "Deklaracja MPK Kraków: autobusy niskopodłogowe od 2018 r."
+    publisher: Miejskie Przedsiębiorstwo Komunikacyjne S.A. w Krakowie
+    url: https://mpk.krakow.pl/artykul/13/dostepnosc-dla-osob-z-ograniczona-mobilnoscia
+    used_for: "Autobusy: ocena „prawdopodobnie dostępny” (GTFS ZTP nie ma pola niskiej podłogi)"
+    license: "Informacja ze strony przewoźnika (nie zbiór danych); warunki ponownego wykorzystania do potwierdzenia"
+    license_status: do_potwierdzenia
+    attribution: "Źródło: MPK Kraków"
+    commercial_use: "DO POTWIERDZENIA. Używamy faktu (deklaracji), nie kopiujemy tekstu."
+    currency: "Strona bez daty publikacji, stan sprawdzony 2026-10-03."
+    verification: "Status „prawdopodobne”, nigdy „potwierdzone”: to deklaracja dla całej floty, nie sprawdzenie pojazdu. Flaga ZTP na żywo (jeśli jest) ma pierwszeństwo."
+    limitations: "Rampa może być niesprawna; część linii obsługują inni przewoźnicy (np. Mobilis); dostępność pojazdu to nie dostępność przystanku."
+    retrieved_from_file: null
+  - id: ttss_fleet
+    name: "Wykaz taboru tramwajowego (numer taborowy -> typ), TTSS"
+    publisher: "Serwis społecznościowy api.ttss.pl (dane o taborze Krakowa)"
+    url: https://api.ttss.pl/vehicles/trams/
+    used_for: "Sprawdzenie flagi ZTP dla tramwaju: typ taboru (niska/wysoka podłoga) vs flaga na żywo; wykrywanie sprzeczności"
+    license: "Brak informacji o licencji; źródło nieoficjalne"
+    license_status: do_potwierdzenia
+    attribution: "Źródło: api.ttss.pl (wykaz taboru)"
+    commercial_use: "DO POTWIERDZENIA. Wykaz mamy zapisany lokalnie (engine/data/tram_fleet.csv), strona nie jest odpytywana na żywo."
+    currency: "Stan z 2026-10-03; tabor się zmienia - odświeżać okresowo."
+    verification: "Przypisanie typ -> podłoga (niska/wysoka) to nasza klasyfikacja do potwierdzenia u MPK. Rozbieżność z flagą ZTP pokazujemy jako „sprzeczne dane”."
+    limitations: "Źródło nieoficjalne; nie wszystkie pojazdy muszą być na liście."
+    retrieved_from_file: null
+  - id: aoi
+    name: "Granica obszaru demo (obręb Kraków-Śródmieście)"
+    publisher: "GUGiK / Państwowy Rejestr Granic (wg atrybutów pliku: PL.PZGIK.200, EGIB)"
+    url: https://www.geoportal.gov.pl
+    used_for: "Wielokąt, do którego przycinamy wszystkie dane (trasy, miejsca, adresy, przystanki)"
+    license: "Plik przekazany przez zespół; warunki wykorzystania Państwowego Rejestru Granic do potwierdzenia"
+    license_status: do_potwierdzenia
+    attribution: "Źródło: GUGiK, Państwowy Rejestr Granic"
+    commercial_use: "DO POTWIERDZENIA na stronie PRG / Geoportalu."
+    currency: "Granica jednostki ewidencyjnej; data pliku do uzupełnienia."
+    verification: "Powierzchnia z geometrii (17,84 km²) zgadza się z atrybutem JPT_POWIER = 1787 ha."
+    limitations: "Granica administracyjna, a nie obszar chodzenia pieszego: trasy przy brzegu mogą urywać się na granicy."
+    retrieved_from_file: null
   - id: user_reports
     name: "Zgłoszenia użytkowników"
     publisher: "Użytkownicy aplikacji (anonimowo, bez kont i danych osobowych)"

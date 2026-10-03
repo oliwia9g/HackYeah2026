@@ -1,16 +1,8 @@
 """API "Kraków bez barier" (FastAPI) - cienka warstwa na silniku (engine/) i danych (public/data/).
-
-Uruchomienie (z katalogu backend/):
-    pip install -r requirements.txt
-    uvicorn api.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
-    # dokumentacja i test w przegladarce:  http://localhost:8000/docs
-
 Zmienne srodowiskowe:
     HACKYEAH_SEED=1   wstaw kilka PRZYKLADOWYCH zgloszen (oznaczone "dane demo") - do pokazu sprzecznosci danych
     HACKYEAH_DEV=0    wylacz endpointy deweloperskie (/api/dev/*) na wdrozeniu
 
-Zasady (z briefu): kazda informacja ma zrodlo, date i status; brak danych != dostepne;
-zgloszenia uzytkownikow sa niezweryfikowane i wyraznie odroznione; bez kont i bez danych osobowych.
 """
 from __future__ import annotations
 
@@ -33,7 +25,7 @@ from engine.routing import Net
 from engine.geocode import Geocoder
 from engine.realtime import Realtime
 from engine.transit import Transit
-from pipeline.common import ROOT, load_config, out_dir
+from pipeline.common import ROOT, inside_aoi, load_aoi, load_config, out_dir
 
 # atrybuty pokazywane na karcie miejsca per profil (klucze = tagi OSM z config.yaml)
 PROFILE_ATTRS = {
@@ -243,7 +235,7 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
     b = cfg["bbox"]
 
     def inside(lon, lat):
-        return b["west"] <= lon <= b["east"] and b["south"] <= lat <= b["north"]
+        return inside_aoi(cfg, lon, lat)
 
     def resolve(lon, lat, place, name):
         if place:
@@ -254,7 +246,7 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
         if lon is None or lat is None:
             raise HTTPException(422, detail=f"Podaj {name}_lon i {name}_lat albo {name}_place")
         if not inside(lon, lat):
-            raise HTTPException(422, detail=f"Punkt ({name}) poza obszarem demo (Stare Miasto, Kazimierz, Dworzec)")
+            raise HTTPException(422, detail=f"Punkt ({name}) poza obszarem demo")
         return (lon, lat)
 
     def resolve_q(q, lon, lat, place, name):
@@ -278,8 +270,16 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
         return {"bbox": b, "profiles": [{"key": k, "label": v["label"], "needs": v["needs"]} for k, v in PROFILES.items()],
                 "modes": {"warn": "ostrzegaj o niepewnych danych", "strict": "tylko pewne"},
                 "dane_pobrane": max(dates) if dates else None, "miejsc": len(store.places),
-                "zgloszen": len(store.reports), "transport": transit.available, "geokodowanie": geocoder.available, "zrodlo_niedostepne": store.outage, "atrybucja": ATTRIBUTION,
+                "zgloszen": len(store.reports), "transport": transit.available, "lawki_w_danych": store.net.rest_count, "geokodowanie": geocoder.available, "zrodlo_niedostepne": store.outage, "atrybucja": ATTRIBUTION,
                 "uwaga": "Brak danych nie oznacza dostępności. Zgłoszenia użytkowników są niezweryfikowane."}
+
+    @app.get("/api/area")
+    def area():
+        """Obrys obszaru demo (GeoJSON, WGS84) - do narysowania na mapie i ustawienia widoku."""
+        import shapely
+        from shapely.geometry import mapping
+        return {"type": "Feature", "properties": {"name": "Obszar demo", "bbox": b},
+                "geometry": mapping(shapely.set_precision(load_aoi(cfg), 1e-6))}
 
     @app.get("/api/sources")
     def sources():
@@ -378,7 +378,7 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
             warnings.append(f"{r['pct_niepewne']}% trasy ma niepełne dane - patrz kroki oznaczone UWAGA.")
         if store.outage:
             warnings.append("Źródło OpenStreetMap chwilowo niedostępne - dane z zapisu, mogą być nieaktualne.")
-        props = {k: r[k] for k in ("profile", "mode", "length_m", "time_min", "pct_niepewne", "steps")}
+        props = {k: r[k] for k in ("profile", "mode", "length_m", "time_min", "pct_niepewne", "steps", "max_do_lawki_m", "lawki_w_danych")}
         return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": r["coords"]},
                 "properties": {**props, "start_label": a_label, "end_label": z_label, "warnings": warnings,
                                "atrybucja": ATTRIBUTION}}
