@@ -1,6 +1,52 @@
 import React, { useEffect, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import proj4 from "proj4";
+
+const EPSG2180 = "+proj=tmerc +lat_0=0 +lon_0=19 +k=0.9993 +x_0=500000 +y_0=-5300000 +ellps=GRS80 +units=m +no_defs";
+
+function transformGeometryToWgs84(geometry) {
+  if (!geometry || !geometry.coordinates) return geometry;
+
+  const transformCoords = (coords) => {
+    if (!Array.isArray(coords)) return coords;
+
+    if (coords.length === 2 && typeof coords[0] === "number" && typeof coords[1] === "number") {
+      const [x, y] = proj4(EPSG2180, "WGS84", [coords[0], coords[1]]);
+      return [x, y];
+    }
+
+    return coords.map((item) => transformCoords(item));
+  };
+
+  return {
+    ...geometry,
+    coordinates: transformCoords(geometry.coordinates),
+  };
+}
+
+function transformAoiToWgs84(data) {
+  if (!data) return data;
+
+  if (data.type === "FeatureCollection") {
+    return {
+      ...data,
+      features: data.features.map((feature) => ({
+        ...feature,
+        geometry: transformGeometryToWgs84(feature.geometry),
+      })),
+    };
+  }
+
+  if (data.type === "Feature") {
+    return {
+      ...data,
+      geometry: transformGeometryToWgs84(data.geometry),
+    };
+  }
+
+  return transformGeometryToWgs84(data);
+}
 
 export default function Map({
   initialLng = 19.94,
@@ -98,6 +144,72 @@ export default function Map({
       mapRef.current = null;
     };
   }, [initialLng, initialLat, initialZoom]); // POPRAWKA 1: Usunięcie onPointsChange z dependencies
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const loadAoi = async () => {
+      try {
+        const response = await fetch(new URL("../assets/AOI_krk.geojson", import.meta.url));
+        const rawAoi = await response.json();
+        const aoiData = transformAoiToWgs84(rawAoi);
+
+        if (!map.getSource("aoi-source")) {
+          map.addSource("aoi-source", {
+            type: "geojson",
+            data: aoiData,
+          });
+
+          map.addLayer({
+            id: "aoi-fill",
+            type: "fill",
+            source: "aoi-source",
+            paint: {
+              "fill-color": "#22c55e",
+              "fill-opacity": 0.2,
+            },
+          });
+
+          map.addLayer({
+            id: "aoi-outline",
+            type: "line",
+            source: "aoi-source",
+            paint: {
+              "line-color": "#16a34a",
+              "line-width": 2,
+              "line-opacity": 0.9,
+            },
+          });
+        }
+
+        const aoiCoords = aoiData.features?.[0]?.geometry?.coordinates;
+        if (aoiCoords) {
+          const flat = aoiCoords.flat(Infinity);
+          const points = [];
+          for (let i = 0; i < flat.length; i += 2) {
+            points.push([flat[i], flat[i + 1]]);
+          }
+
+          if (points.length > 0) {
+            const bounds = points.reduce(
+              (b, coord) => b.extend(coord),
+              new maplibregl.LngLatBounds(points[0], points[0])
+            );
+            map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load AOI layer:", error);
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      loadAoi();
+    } else {
+      map.once("load", loadAoi);
+    }
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
