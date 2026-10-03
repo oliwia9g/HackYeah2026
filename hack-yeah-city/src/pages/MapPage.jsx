@@ -7,7 +7,6 @@ export default function MapPage({ theme }) {
   const [routeData, setRouteData] = useState(null); // Tutaj zapisujemy trasę z API
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const [theme, setTheme] = useState("light");
   const [addresses, setAddresses] = useState({ from: "", to: "" });
   const [clearSelectionVersion, setClearSelectionVersion] = useState(0);
 
