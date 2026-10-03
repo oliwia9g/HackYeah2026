@@ -1,8 +1,16 @@
 """API "Kraków bez barier" (FastAPI) - cienka warstwa na silniku (engine/) i danych (public/data/).
 
+Uruchomienie (z katalogu backend/):
+    pip install -r requirements.txt
+    uvicorn api.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+    # dokumentacja i test w przegladarce:  http://localhost:8000/docs
+
 Zmienne srodowiskowe:
     HACKYEAH_SEED=1   wstaw kilka PRZYKLADOWYCH zgloszen (oznaczone "dane demo") - do pokazu sprzecznosci danych
     HACKYEAH_DEV=0    wylacz endpointy deweloperskie (/api/dev/*) na wdrozeniu
+
+Zasady (z briefu): kazda informacja ma zrodlo, date i status; brak danych != dostepne;
+zgloszenia uzytkownikow sa niezweryfikowane i wyraznie odroznione; bez kont i bez danych osobowych.
 """
 from __future__ import annotations
 
@@ -49,7 +57,7 @@ ALLOWED_REPORT_ATTRS = set(ATTR_LABELS)
 ATTRIBUTION = [
     "Dane mapy i obiektów: © OpenStreetMap contributors, licencja ODbL",
     "Model terenu (nachylenia): GUGiK / Geoportal (NMT), dane publiczne",
-    "Rozkłady jazdy: ZTP Kraków (GTFS), dane publiczne - rozkład, nie czas rzeczywisty",
+    "Rozkłady jazdy i dane na żywo: ZTP Kraków (GTFS) - rozkład, nie gwarancja; warunki licencji do potwierdzenia",
     "Zgłoszenia użytkowników: niezweryfikowane, oznaczone osobno",
 ]
 
@@ -272,6 +280,35 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
                 "dane_pobrane": max(dates) if dates else None, "miejsc": len(store.places),
                 "zgloszen": len(store.reports), "transport": transit.available, "geokodowanie": geocoder.available, "zrodlo_niedostepne": store.outage, "atrybucja": ATTRIBUTION,
                 "uwaga": "Brak danych nie oznacza dostępności. Zgłoszenia użytkowników są niezweryfikowane."}
+
+    @app.get("/api/sources")
+    def sources():
+        """Rejestr zrodel danych (brief pkt 7): pochodzenie, licencja, aktualnosc, sposob weryfikacji."""
+        import yaml
+        from pipeline.common import raw_dir as _raw
+        reg = yaml.safe_load((ROOT / "sources.yaml").read_text("utf-8"))
+        raw = _raw(cfg)
+
+        def mtime(name):
+            f = raw / name
+            return datetime.fromtimestamp(f.stat().st_mtime).date().isoformat() if f.exists() else None
+
+        def json_field(name, key):
+            f = raw / name
+            try:
+                return json.loads(f.read_text("utf-8")).get(key)
+            except Exception:
+                return None
+
+        fresh = {"facts": max((f["retrieved_at"] for fs in store.facts.values() for l in fs.values() for f in l), default=None),
+                 "osm_meta": json_field("osm_meta.json", "fetched_at"),
+                 "dem": mtime("edges_incline.pkl"),
+                 "transit": transit.meta.get("generated_at")}
+        for s_ in reg["used"]:
+            key = s_.pop("retrieved_from_file", None)
+            s_["data_retrieved_at"] = fresh.get(key) if key else None
+        return {"used": reg["used"], "considered_not_used": reg["considered_not_used"],
+                "rule": "Brak danych nie oznacza dostępności. Zgłoszenia użytkowników są niezweryfikowane."}
 
     @app.get("/api/geocode")
     def geocode(q: str = Query(..., min_length=2, max_length=100), limit: int = Query(8, ge=1, le=20)):

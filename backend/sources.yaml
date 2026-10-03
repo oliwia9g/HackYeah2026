@@ -1,0 +1,95 @@
+# Rejestr źródeł danych (wymóg briefu, pkt 7): pochodzenie, warunki wykorzystania, aktualność, weryfikacja.
+# license_status: "potwierdzona" = warunki sprawdzone na stronie źródła; "do_potwierdzenia" = nie znaleźliśmy jednoznacznej licencji.
+# Źródło prawdy: ten plik. Dokument SOURCES.md i endpoint /api/sources są z niego generowane.
+used:
+  - id: osm
+    name: "OpenStreetMap (sieć piesza, obiekty, krawężniki, przejścia)"
+    publisher: Społeczność OpenStreetMap
+    url: https://www.openstreetmap.org
+    used_for: "Sieć piesza (trasy), obiekty użytku publicznego i ich dostępność (tag wheelchair itd.), przejścia, krawężniki, adresy (geokodowanie)"
+    license: ODbL 1.0
+    license_status: potwierdzona
+    attribution: "© OpenStreetMap contributors"
+    commercial_use: "Dozwolone z oznaczeniem źródła. ODbL wymaga, by publicznie udostępniona baza pochodna (np. nasze facts.csv/json, adresy) też była na ODbL (share-alike)."
+    currency: "Dane społecznościowe, różna świeżość. Mierzymy ją: data ostatniej edycji obiektu (Overpass) i, jeśli jest, check_date. Około 20% obiektów ma check_date."
+    verification: "Każdy fakt ma status (potwierdzone / prawdopodobne / niezweryfikowane / sprzeczne / brak). Sama data ostatniej edycji nie daje statusu „potwierdzone”. Sprzeczność ze zgłoszeniem użytkownika jest pokazywana wprost. Brak tagu = „brak danych”, nigdy „dostępne”."
+    limitations: "Niskie pokrycie tagów dostępności (wheelchair ma ok. 8% POI, szerokość drzwi 0%). Pobieranie przez Overpass API podlega polityce użycia serwera."
+    retrieved_from_file: facts
+  - id: overpass_meta
+    name: "Overpass API (metadane: data ostatniej edycji)"
+    publisher: Overpass API / OpenStreetMap
+    url: https://overpass-api.de
+    used_for: "Data ostatniej edycji obiektów OSM (out meta) jako słabszy dowód aktualności"
+    license: "ODbL 1.0 (te same dane OSM)"
+    license_status: potwierdzona
+    attribution: "© OpenStreetMap contributors"
+    commercial_use: "Jak OSM. Publiczne serwery Overpass mają limity - na wdrożeniu potrzebny własny lub komercyjny serwer."
+    currency: "Pobierane przy każdym uruchomieniu pipeline.fetch_overpass_meta"
+    verification: "Data edycji nie jest potwierdzeniem dostępności; oznaczamy ją osobno (observed_basis = last_edit)."
+    limitations: "Edycja mogła dotyczyć innego atrybutu (np. nazwy)."
+    retrieved_from_file: osm_meta
+  - id: nmt
+    name: "Numeryczny Model Terenu (NMT), GUGiK"
+    publisher: "Główny Urząd Geodezji i Kartografii, Geoportal"
+    url: https://www.geoportal.gov.pl/en/data/digital-elevation-model-dem/
+    used_for: "Nachylenia chodników (OSM prawie ich nie ma - ok. 3,7% krawędzi)"
+    license: "Dane NMT udostępniane bezpłatnie, do dowolnego celu (wg Geoportalu)"
+    license_status: potwierdzona
+    attribution: "Źródło: Główny Urząd Geodezji i Kartografii (Geoportal)"
+    commercial_use: "Wg informacji Geoportalu bez ograniczeń celu; dokładny tekst warunków do przepisania z oficjalnej strony przed wdrożeniem komercyjnym."
+    currency: "Aktualizowany wg nalotów skanowania laserowego; konkretna data dla Krakowa do sprawdzenia w metadanych usługi."
+    verification: "NMT służy do OCENY nachyleń, nie do blokowania trasy bez pewności: blokujemy tylko, gdy źródłem jest OSM albo odcinek NMT ma co najmniej 25 m. Mosty i tunele zakładamy jako płaskie. Źródło nachylenia (OSM / NMT / krótka krawędź / brak) jest zapisane przy każdej krawędzi."
+    limitations: "NMT to teren, nie powierzchnia chodnika. Krótkie odcinki dają niepewny wynik."
+    retrieved_from_file: dem
+  - id: ztp_gtfs
+    name: "Rozkłady jazdy ZTP Kraków (GTFS: tramwaje i autobusy)"
+    publisher: Zarząd Transportu Publicznego w Krakowie
+    url: https://gtfs.ztp.krakow.pl/
+    used_for: "Przystanki i odjazdy z rozkładu w pobliżu miejsca"
+    license: "Nie znaleźliśmy jednoznacznej licencji na stronie plików. ZTP publikuje je jako otwarte dane miasta."
+    license_status: do_potwierdzenia
+    attribution: "Źródło: ZTP Kraków (GTFS)"
+    commercial_use: "DO POTWIERDZENIA u ZTP lub w opisie zbioru na portalu Otwarte Dane Krakowa przed użyciem komercyjnym."
+    currency: "Pliki aktualizowane codziennie (strona pokazuje daty aktualizacji)."
+    verification: "Rozkład to nie rzeczywistość: odjazdy są oznaczone jako rozkład. Pola dostępności przystanków i kursów (wheelchair_boarding / wheelchair_accessible) mają w feedzie same zera = brak danych, więc NIE pokazujemy dostępności z rozkładu."
+    limitations: "Brak informacji o niskiej podłodze i dostępności przystanków w danych statycznych."
+    retrieved_from_file: transit
+  - id: ztp_gtfs_rt
+    name: "GTFS-Realtime ZTP Kraków (prognozy przyjazdów, pozycje pojazdów)"
+    publisher: Zarząd Transportu Publicznego w Krakowie
+    url: https://gtfs.ztp.krakow.pl/
+    used_for: "Przyjazdy na żywo i flaga dostępności POJAZDU (tramwaje)"
+    license: "Jak GTFS ZTP - do potwierdzenia"
+    license_status: do_potwierdzenia
+    attribution: "Źródło: ZTP Kraków (GTFS-Realtime)"
+    commercial_use: "DO POTWIERDZENIA u ZTP."
+    currency: "Odświeżane co kilkanaście sekund; u nas pamięć podręczna 20 s, po awarii najwyżej 10 min."
+    verification: "Flaga dostępności pochodzi od operatora i dotyczy pojazdu obsługującego kurs w tej chwili. Autobusy: brak danych (nie zgadujemy). Przy awarii źródła pokazujemy komunikat i sam rozkład."
+    limitations: "Brak pola opóźnienia w większości wpisów. Kursy dalej w przyszłości często bez przypisanego pojazdu."
+    retrieved_from_file: null
+  - id: user_reports
+    name: "Zgłoszenia użytkowników"
+    publisher: "Użytkownicy aplikacji (anonimowo, bez kont i danych osobowych)"
+    url: null
+    used_for: "Uzupełnienie i sprostowanie danych o dostępności miejsc"
+    license: "Zgłoszenia dobrowolne, bez danych osobowych"
+    license_status: potwierdzona
+    attribution: "Zgłoszenie użytkownika (niezweryfikowane)"
+    commercial_use: "Własne dane projektu; regulamin zgłoszeń do przygotowania."
+    currency: "Data zgłoszenia przy każdym wpisie."
+    verification: "Zawsze oznaczone jako niezweryfikowane (pewność 0,3), pokazywane osobno od innych źródeł. Ograniczenie liczby zgłoszeń (10 na godzinę z jednego adresu), czyszczenie treści. Sprzeczność ze źródłem = status „sprzeczne”."
+    limitations: "Możliwe nadużycia; weryfikacja (potwierdzenie przez właściciela lub kolejnych użytkowników) to kolejny etap."
+    retrieved_from_file: null
+considered_not_used:
+  - name: "Portal Otwarte Dane Krakowa i ArcGIS Hub ZTP"
+    url: https://otwartedane.um.krakow.pl
+    note: "ZTP publikuje m.in. lokalizacje wiat przystankowych, trasy dojścia do przystanków i punkty SIM. Nie sprawdziliśmy ich zawartości pod kątem dostępności ani licencji. Kandydat do kolejnego etapu."
+  - name: "Miejski System Informacji Przestrzennej (MSIP)"
+    url: https://msip.krakow.pl
+    note: "Dane przestrzenne Krakowa (WMS/WFS). Zakres i warunki trzeba sprawdzić dla konkretnego zasobu. Kandydat do kolejnego etapu (np. krawężniki, przejścia)."
+  - name: "dane.gov.pl"
+    url: https://dane.gov.pl
+    note: "Ogólnopolski katalog - istotny przy skalowaniu na inne miasta (np. inne feedy GTFS, NMT dla całego kraju)."
+  - name: "Nominatim i inne zewnętrzne geokodery"
+    url: https://nominatim.org
+    note: "Świadomie nieużyte: limity publicznego serwera i ryzyko awarii na pokazie. Mamy lokalny geokoder na danych OSM."
