@@ -57,6 +57,7 @@ export default function Map({
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
+  const loadedRef = useRef(false);
   const stateRef = useRef({ pointA: null, pointB: null, markerA: null, markerB: null });
   
   // POPRAWKA 1: Utrzymanie aktualnej referencji do onPointsChange bez wyzwalania re-renderów mapy
@@ -93,9 +94,14 @@ export default function Map({
       },
       center: [initialLng, initialLat],
       zoom: initialZoom,
+      // obszar demo backendu (backend/config.yaml), z lekkim zapasem
+      maxBounds: [[19.9, 50.03], [19.99, 50.09]],
     });
 
     mapRef.current = map;
+    map.on("load", () => {
+      loadedRef.current = true;
+    });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
 
     map.on("click", (e) => {
@@ -142,6 +148,7 @@ export default function Map({
       stateRef.current.markerB?.remove();
       map.remove();
       mapRef.current = null;
+      loadedRef.current = false;
     };
   }, [initialLng, initialLat, initialZoom]); // POPRAWKA 1: Usunięcie onPointsChange z dependencies
 
@@ -283,7 +290,6 @@ export default function Map({
       if (routeSource) {
         routeSource.setData(geojsonFeature);
       } else {
-        console.log("nic");
         map.addSource("route-source", {
           type: "geojson",
           data: geojsonFeature,
@@ -332,7 +338,9 @@ export default function Map({
       }
     };
 
-    if (map.isStyleLoaded()) {
+    // isStyleLoaded() bywa false, gdy trwa ładowanie kafelków, a "load" odpala się tylko raz,
+    // więc opieramy się na własnej fladze.
+    if (loadedRef.current) {
       drawRoute();
     } else {
       map.once("load", drawRoute);

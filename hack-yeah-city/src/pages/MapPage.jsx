@@ -39,7 +39,14 @@ export default function MapPage() {
     try {
       const response = await fetch(apiUrl);
       if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
+        let detail = "";
+        try {
+          const body = await response.json();
+          detail = typeof body.detail === "string" ? body.detail : body.detail?.message || "";
+        } catch {
+          // brak JSON w odpowiedzi
+        }
+        throw new Error(detail || `Błąd HTTP: ${response.status}`);
       }
 
       const data = await response.json();

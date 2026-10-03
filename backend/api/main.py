@@ -1,3 +1,17 @@
+"""API "Kraków bez barier" (FastAPI) - cienka warstwa na silniku (engine/) i danych (public/data/).
+
+Uruchomienie (z katalogu backend/):
+    pip install -r requirements.txt
+    uvicorn api.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+    # dokumentacja i test w przegladarce:  http://localhost:8000/docs
+
+Zmienne srodowiskowe:
+    HACKYEAH_SEED=1   wstaw kilka PRZYKLADOWYCH zgloszen (oznaczone "dane demo") - do pokazu sprzecznosci danych
+    HACKYEAH_DEV=0    wylacz endpointy deweloperskie (/api/dev/*) na wdrozeniu
+
+Zasady (z briefu): kazda informacja ma zrodlo, date i status; brak danych != dostepne;
+zgloszenia uzytkownikow sa niezweryfikowane i wyraznie odroznione; bez kont i bez danych osobowych.
+"""
 from __future__ import annotations
 
 import json
@@ -7,6 +21,7 @@ import time
 import unicodedata
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -15,8 +30,12 @@ from pydantic import BaseModel, Field
 
 from engine.profiles import PROFILES
 from engine.routing import Net
+from engine.geocode import Geocoder
+from engine.realtime import Realtime
+from engine.transit import Transit
 from pipeline.common import ROOT, load_config, out_dir
 
+# atrybuty pokazywane na karcie miejsca per profil (klucze = tagi OSM z config.yaml)
 PROFILE_ATTRS = {
     "wozek_inwalidzki": ["wheelchair", "wheelchair:description", "door:width", "entrance", "toilets:wheelchair"],
     "wozek_dziecko": ["wheelchair", "door:width", "entrance", "changing_table", "toilets:wheelchair"],
@@ -38,6 +57,7 @@ ALLOWED_REPORT_ATTRS = set(ATTR_LABELS)
 ATTRIBUTION = [
     "Dane mapy i obiektów: © OpenStreetMap contributors, licencja ODbL",
     "Model terenu (nachylenia): GUGiK / Geoportal (NMT), dane publiczne",
+    "Rozkłady jazdy i dane na żywo: ZTP Kraków (GTFS) - rozkład, nie gwarancja; warunki licencji do potwierdzenia",
     "Zgłoszenia użytkowników: niezweryfikowane, oznaczone osobno",
 ]
 
@@ -124,7 +144,8 @@ class Store:
         for f in self.facts.get(fid, {}).get(attr, []):
             versions.append({"value": f["value"], "source": f["source"], "source_url": f.get("source_url"),
                              "license": f.get("license"), "observed_at": f.get("observed_at"),
-                             "retrieved_at": f.get("retrieved_at"), "confidence": f.get("confidence"), "status": f["status"]})
+                             "retrieved_at": f.get("retrieved_at"), "confidence": f.get("confidence"), "status": f["status"],
+                             "observed_basis": f.get("observed_basis"), "last_edit_at": f.get("last_edit_at")})
         for r in self.reports:
             if r["feature_id"] == fid and r["attribute"] == attr:
                 src = "zgłoszenie użytkownika" + (" (PRZYKŁADOWE - dane demo)" if r.get("demo") else "")
@@ -138,11 +159,16 @@ class Store:
             return {**base, "status": "sprzeczne", "value": None, "value_text": "sprzeczne informacje", "confidence": 0.0,
                     "versions": versions, "note": "Źródła podają różne wartości - sprawdź przed wizytą."}
         best = max(versions, key=lambda v: v.get("confidence") or 0)
+        note = None
+        if best.get("observed_basis") == "last_edit":
+            note = ("Data to ostatnia edycja obiektu w OpenStreetMap, a nie potwierdzenie dostępności - "
+                    "ktoś mógł zmienić np. nazwę, nie sprawdzając wejścia.")
         return {**base, "status": best["status"], "value": best["value"],
                 "value_text": VALUE_TEXT.get(best["value"], best["value"]), "confidence": best.get("confidence"),
                 "source": best["source"], "source_url": best.get("source_url"), "license": best.get("license"),
                 "observed_at": best.get("observed_at"), "retrieved_at": best.get("retrieved_at"),
-                "versions": versions, "note": None}
+                "observed_basis": best.get("observed_basis"), "last_edit_at": best.get("last_edit_at"),
+                "versions": versions, "note": note}
 
     def card(self, fid: str, profile: str | None) -> dict:
         p = self.places.get(fid)
@@ -183,9 +209,28 @@ def parse_profiles(s: str) -> list:
 
 
 def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: list | None = None,
-               cfg: dict | None = None, reports_path: Path | None = None) -> FastAPI:
+               cfg: dict | None = None, reports_path: Path | None = None, transit: Transit | None = None,
+               realtime: Realtime | None = None, geocoder: Geocoder | None = None) -> FastAPI:
     cfg = cfg or load_config()
     out = out_dir(cfg)
+    if transit is None:
+        from pipeline.common import raw_dir
+        transit = Transit.from_file(raw_dir(cfg) / "transit.json")
+    realtime = realtime or Realtime()
+    if geocoder is None:
+        from pipeline.common import raw_dir as _raw
+        geocoder = Geocoder.from_file(_raw(cfg) / "addresses.json")
+
+    def add_live(block: dict, only_acc: bool) -> dict:
+        """Dokleja do kazdego przystanku odjazdy na zywo (GTFS-RT). Awaria ZTP nie psuje reszty odpowiedzi."""
+        for st in block["stops"]:
+            full = transit.stops.get(st["id"])
+            try:
+                st["live"] = realtime.live_for_stop(full, transit.trips, only_accessible=only_acc) if full else \
+                    {"available": False, "departures": []}
+            except Exception:
+                st["live"] = {"available": False, "reason": "Dane na żywo chwilowo niedostępne.", "departures": []}
+        return block
     net = net or Net.from_files(cfg)
     if pois_geojson is None:
         pois_geojson = json.loads((out / "pois.geojson").read_text("utf-8"))
@@ -212,6 +257,17 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
             raise HTTPException(422, detail=f"Punkt ({name}) poza obszarem demo (Stare Miasto, Kazimierz, Dworzec)")
         return (lon, lat)
 
+    def resolve_q(q, lon, lat, place, name):
+        """Punkt z adresu (q), miejsca (place) albo wspolrzednych. Zwraca (punkt, rozpoznana_etykieta)."""
+        if q:
+            if not geocoder.available:
+                raise HTTPException(503, detail="Geokodowanie niedostępne (uruchom pipeline.fetch_addresses)")
+            hits = geocoder.search(q, 1)
+            if not hits:
+                raise HTTPException(404, detail=f"Nie znaleziono adresu ({name}): {q}")
+            return (hits[0]["lon"], hits[0]["lat"]), hits[0]["label"]
+        return resolve(lon, lat, place, name), None
+
     app = FastAPI(title="Kraków bez barier - API", version="0.1",
                   description="Trasy i karty miejsc dopasowane do potrzeb. Brak danych nie oznacza dostępności.")
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -222,8 +278,52 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
         return {"bbox": b, "profiles": [{"key": k, "label": v["label"], "needs": v["needs"]} for k, v in PROFILES.items()],
                 "modes": {"warn": "ostrzegaj o niepewnych danych", "strict": "tylko pewne"},
                 "dane_pobrane": max(dates) if dates else None, "miejsc": len(store.places),
-                "zgloszen": len(store.reports), "zrodlo_niedostepne": store.outage, "atrybucja": ATTRIBUTION,
+                "zgloszen": len(store.reports), "transport": transit.available, "geokodowanie": geocoder.available, "zrodlo_niedostepne": store.outage, "atrybucja": ATTRIBUTION,
                 "uwaga": "Brak danych nie oznacza dostępności. Zgłoszenia użytkowników są niezweryfikowane."}
+
+    @app.get("/api/sources")
+    def sources():
+        """Rejestr zrodel danych (brief pkt 7): pochodzenie, licencja, aktualnosc, sposob weryfikacji."""
+        import yaml
+        from pipeline.common import raw_dir as _raw
+        reg = yaml.safe_load((ROOT / "sources.yaml").read_text("utf-8"))
+        raw = _raw(cfg)
+
+        def mtime(name):
+            f = raw / name
+            return datetime.fromtimestamp(f.stat().st_mtime).date().isoformat() if f.exists() else None
+
+        def json_field(name, key):
+            f = raw / name
+            try:
+                return json.loads(f.read_text("utf-8")).get(key)
+            except Exception:
+                return None
+
+        fresh = {"facts": max((f["retrieved_at"] for fs in store.facts.values() for l in fs.values() for f in l), default=None),
+                 "osm_meta": json_field("osm_meta.json", "fetched_at"),
+                 "dem": mtime("edges_incline.pkl"),
+                 "transit": transit.meta.get("generated_at")}
+        for s_ in reg["used"]:
+            key = s_.pop("retrieved_from_file", None)
+            s_["data_retrieved_at"] = fresh.get(key) if key else None
+        return {"used": reg["used"], "considered_not_used": reg["considered_not_used"],
+                "rule": "Brak danych nie oznacza dostępności. Zgłoszenia użytkowników są niezweryfikowane."}
+
+    @app.get("/api/geocode")
+    def geocode(q: str = Query(..., min_length=2, max_length=100), limit: int = Query(8, ge=1, le=20)):
+        """Adres/ulica/miejsce -> wspolrzedne (do pol 'skad/dokad' zamiast klikania w mape). Dziala na danych lokalnych."""
+        if not geocoder.available:
+            raise HTTPException(503, detail="Geokodowanie niedostępne (uruchom pipeline.fetch_addresses)")
+        res = geocoder.search(q, limit)
+        qn = norm(q)
+        if len(res) < limit:   # nazwy miejsc (kawiarnie, muzea...) z tych samych danych OSM
+            for p in sorted((p for p in store.places.values() if p["norm"] and qn in p["norm"]),
+                            key=lambda p: (not p["norm"].startswith(qn), len(p["norm"])))[: limit - len(res)]:
+                res.append({"id": p["id"], "label": p["name"], "type": "miejsce", "street": None, "number": None,
+                            "lon": p["lon"], "lat": p["lat"], "exact": False, "approximate": False, "fuzzy": False})
+        return {"results": res, "source": geocoder.meta.get("source"), "license": geocoder.meta.get("license"),
+                "note": "Tylko adresy zapisane w OpenStreetMap w obszarze demo. Brak wyniku nie oznacza, że adres nie istnieje."}
 
     @app.get("/api/places")
     def places(q: str = Query(..., min_length=2, max_length=60), limit: int = Query(10, ge=1, le=30)):
@@ -236,19 +336,42 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
     def place_card(feature_id: str, profile: str | None = None):
         if profile and profile not in PROFILES:
             raise HTTPException(422, detail=f"Nieznany profil: {profile}")
-        return store.card(feature_id, profile)
+        card = store.card(feature_id, profile)
+        if transit.available:
+            pl = card["place"]
+            acc = profile in ("wozek_inwalidzki", "wozek_dziecko")
+            card["transit"] = add_live(transit.nearby_with_departures(
+                pl["lon"], pl["lat"], datetime.now(ZoneInfo("Europe/Warsaw")).replace(tzinfo=None),
+                only_accessible=acc), acc)
+        return card
+
+    @app.get("/api/transit/nearby")
+    def transit_nearby(lon: float, lat: float, radius: int = Query(400, ge=50, le=1000), n: int = Query(3, ge=1, le=10),
+                       only_accessible: bool = False):
+        if not transit.available:
+            raise HTTPException(503, detail="Brak danych o komunikacji (uruchom pipeline.fetch_gtfs)")
+        if not inside(lon, lat):
+            raise HTTPException(422, detail="Punkt poza obszarem demo")
+        return add_live(transit.nearby_with_departures(
+            lon, lat, datetime.now(ZoneInfo("Europe/Warsaw")).replace(tzinfo=None),
+            radius_m=radius, n=n, only_accessible=only_accessible), only_accessible)
 
     @app.get("/api/route")
     def route(from_lon: float | None = None, from_lat: float | None = None, from_place: str | None = None,
               to_lon: float | None = None, to_lat: float | None = None, to_place: str | None = None,
+              from_q: str | None = Query(None, max_length=100), to_q: str | None = Query(None, max_length=100),
               profiles: str = "", mode: str = Query("warn", pattern="^(warn|strict)$")):
         keys = parse_profiles(profiles)
-        a, z = resolve(from_lon, from_lat, from_place, "from"), resolve(to_lon, to_lat, to_place, "to")
+        (a, a_label), (z, z_label) = (resolve_q(from_q, from_lon, from_lat, from_place, "from"),
+                                      resolve_q(to_q, to_lon, to_lat, to_place, "to"))
         r = store.net.route(a, z, keys, mode)
         if r is None:
             raise HTTPException(404, detail={"message": "Nie znaleziono trasy dla tego profilu.",
                                              "hint": "W trybie 'strict' trasa może nie istnieć przy brakach danych. Spróbuj mode=warn."})
         warnings = []
+        for q_, lab in ((from_q, a_label), (to_q, z_label)):
+            if q_ and lab:
+                warnings.append(f"Adres „{q_}” rozpoznano jako: {lab}.")
         if dist_m(a, r["coords"][0]) > 150 or dist_m(z, r["coords"][-1]) > 150:
             warnings.append("Punkt startu lub celu jest daleko od sieci pieszej - trasa zaczyna się w najbliższym dostępnym miejscu.")
         if r["pct_niepewne"] > 0:
@@ -257,7 +380,8 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
             warnings.append("Źródło OpenStreetMap chwilowo niedostępne - dane z zapisu, mogą być nieaktualne.")
         props = {k: r[k] for k in ("profile", "mode", "length_m", "time_min", "pct_niepewne", "steps")}
         return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": r["coords"]},
-                "properties": {**props, "warnings": warnings, "atrybucja": ATTRIBUTION}}
+                "properties": {**props, "start_label": a_label, "end_label": z_label, "warnings": warnings,
+                               "atrybucja": ATTRIBUTION}}
 
     @app.get("/api/isochrone")
     def isochrone(lon: float, lat: float, profiles: str = "", minutes: float = Query(15, ge=1, le=30),
