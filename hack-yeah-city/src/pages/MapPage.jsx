@@ -131,7 +131,7 @@ export default function MapPage({ theme }) {
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: "flex-start",
             gap: "12px",
             marginBottom: "16px",
             padding: "14px 18px",
@@ -143,55 +143,51 @@ export default function MapPage({ theme }) {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-            <button
-              onClick={handlePlanRoute}
-              disabled={!isReady || loading}
-              style={{
-                padding: "12px 18px",
-                fontSize: "14px",
-                fontWeight: 700,
-                border: "none",
-                borderRadius: "999px",
-                background: isReady && !loading ? "linear-gradient(110deg, #f4cc5c, #e15a4f)" : isDarkMode ? "#4a435d" : "#e6f6f8",
-                color: "#000000",
-                boxShadow: isReady && !loading ? "0 10px 20px rgba(225, 90, 79, 0.25)" : "none",
-                cursor: isReady && !loading ? "pointer" : "not-allowed",
-                transition: "all 0.2s ease",
-              }}
-            >
-              {loading ? "Wyznaczanie trasy..." : "Wyznacz trasę"}
-            </button>
+          <RouteForm
+            addresses={addresses}
+            onAddressesChange={handleAddressesChange}
+            isDarkMode={isDarkMode}
+          />
 
-          </div>
+          <button
+            onClick={handlePlanRoute}
+            disabled={!isReady || loading}
+            style={{
+              flex: "0 0 auto",
+              padding: "12px 18px",
+              fontSize: "14px",
+              fontWeight: 700,
+              border: "none",
+              borderRadius: "999px",
+              background: isReady && !loading ? "linear-gradient(110deg, #f4cc5c, #e15a4f)" : isDarkMode ? "#4a435d" : "#e6f6f8",
+              color: "#000000",
+              boxShadow: isReady && !loading ? "0 10px 20px rgba(225, 90, 79, 0.25)" : "none",
+              cursor: isReady && !loading ? "pointer" : "not-allowed",
+              transition: "all 0.2s ease",
+            }}
+          >
+            {loading ? "Wyznaczanie trasy..." : "Wyznacz trasę"}
+          </button>
 
-          
-        
-        <RouteForm
-          addresses={addresses}
-          onAddressesChange={handleAddressesChange}
-          isDarkMode={isDarkMode}
-        />
-
-        <span
-          style={{
-            marginLeft: "auto",
-            fontSize: "14px",
-            color: isDarkMode ? "#ffffff" : "#000000",
-            fontWeight: 500,
-            background: isDarkMode ? "#302b40" : "#e6f6f8",
-            border: isDarkMode ? "1px solid rgba(88, 182, 198, 0.5)" : "1px solid #58b6c6",
-            borderRadius: "999px",
-            padding: "8px 12px",
-          }}
-        >
-          {hasAddressInput && (!addresses.from.trim() || !addresses.to.trim()) &&
-            "Podaj adres początkowy i końcowy."}
-          {!hasAddressInput && !points.pointA && "Kliknij punkt startowy na mapie."}
-          {!hasAddressInput && points.pointA && !points.pointB && "Kliknij punkt docelowy na mapie."}
-          {isReady && !loading && !statusMessage && "Ustaw trasę i kliknij „Wyznacz trasę”."}
-          {statusMessage && statusMessage}
-        </span>
+          <span
+            style={{
+              marginLeft: "auto",
+              fontSize: "14px",
+              color: isDarkMode ? "#ffffff" : "#000000",
+              fontWeight: 500,
+              background: isDarkMode ? "#302b40" : "#e6f6f8",
+              border: isDarkMode ? "1px solid rgba(88, 182, 198, 0.5)" : "1px solid #58b6c6",
+              borderRadius: "999px",
+              padding: "8px 12px",
+            }}
+          >
+            {hasAddressInput && (!addresses.from.trim() || !addresses.to.trim()) &&
+              "Podaj adres początkowy i końcowy."}
+            {!hasAddressInput && !points.pointA && "Kliknij punkt startowy na mapie."}
+            {!hasAddressInput && points.pointA && !points.pointB && "Kliknij punkt docelowy na mapie."}
+            {isReady && !loading && !statusMessage && "Ustaw trasę i kliknij „Wyznacz trasę”."}
+            {statusMessage && statusMessage}
+          </span>
         </div>
 
         <div
