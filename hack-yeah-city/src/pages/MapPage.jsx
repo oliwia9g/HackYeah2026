@@ -76,6 +76,10 @@ export default function MapPage() {
     const handleRouteFromAddresses = (route) => {
     setRouteData(route);
     setStatusMessage("Trasa wyznaczona!");
+    };
+  const handlePointsChange = (nextPoints) => {
+    setPoints(nextPoints);
+    setRouteData(null);
   };
 
   return (

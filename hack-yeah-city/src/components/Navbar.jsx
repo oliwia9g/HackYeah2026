@@ -25,6 +25,7 @@ function Navbar() {
         >
           Map
         </NavLink>
+
       </div>
     </nav>
   );
