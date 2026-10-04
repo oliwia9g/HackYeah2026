@@ -84,3 +84,16 @@ def test_useless_ride_is_filtered_out(net):
     walk = r["walk_only"]["length_m"]
     for o in r["options"]:
         assert o["ride"]["ride_min"] >= 3 and o["walk_m"] < 0.85 * walk
+
+
+def test_all_stops_endpoint_is_503_without_timetable_and_geojson_with_it(net):
+    from tests.conftest import make_client
+    assert make_client(net).get("/api/transit/stops").status_code == 503      # bez rozkładu: uczciwy błąd, nie pusta lista
+    r = make_client(net, transit=_transit()).get("/api/transit/stops")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["type"] == "FeatureCollection" and data["count"] == 4
+    props = {f["properties"]["id"]: f["properties"] for f in data["features"]}
+    assert props["tramwaj:A"]["mode"] == "tramwaj"
+    assert props["autobus:A"]["wheelchair_boarding_text"] == "brak danych o dostępności"   # brak danych != dostępny
+    assert all(len(f["geometry"]["coordinates"]) == 2 for f in data["features"])

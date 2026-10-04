@@ -740,6 +740,22 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
             lon, lat, datetime.now(ZoneInfo("Europe/Warsaw")).replace(tzinfo=None),
             radius_m=radius, n=n, only_accessible=only_accessible), only_accessible)
 
+    @app.get("/api/transit/stops")
+    def transit_stops():
+        """Wszystkie przystanki z rozkładu w obszarze demo jako GeoJSON (Point) - warstwa na mapie.
+        Dostępność przystanku pochodzi z GTFS; ZTP zwykle nie podaje jej wcale, wtedy pole mówi „brak danych”."""
+        from engine.transit import WC_TEXT
+        if not transit.available:
+            raise HTTPException(503, detail="Brak danych o komunikacji (uruchom pipeline.fetch_gtfs)")
+        feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [s["lon"], s["lat"]]},
+                  "properties": {"id": s["id"], "name": s["name"], "mode": s["mode"], "lines": s["lines"],
+                                 "wheelchair_boarding": s["wheelchair_boarding"],
+                                 "wheelchair_boarding_text": WC_TEXT[s["wheelchair_boarding"]]}}
+                 for s in transit.stops.values()]
+        return {"type": "FeatureCollection", "features": feats, "count": len(feats), "note": "Przystanki z rozkładu jazdy ZTP Kraków.",
+                "source": transit.meta.get("source"), "source_url": transit.meta.get("source_url"),
+                "license": transit.meta.get("license"), "data_date": transit.meta.get("generated_at")}
+
     def route_warnings(r, a, z, a_label, z_label, from_q, to_q) -> list:
         warnings = []
         for q_, lab in ((from_q, a_label), (to_q, z_label)):

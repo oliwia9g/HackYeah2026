@@ -60,7 +60,7 @@ def net():
     return build_net()
 
 
-def make_client(net, surveys=None, geocoder=None, buildings=None, extra_facts=None):
+def make_client(net, surveys=None, geocoder=None, buildings=None, extra_facts=None, transit=None):
     from fastapi.testclient import TestClient
     from api.main import create_app
     from engine.geocode import Geocoder
@@ -89,7 +89,7 @@ def make_client(net, surveys=None, geocoder=None, buildings=None, extra_facts=No
     def no_network(name):
         raise RuntimeError("brak sieci w testach")
     app = create_app(net=net, pois_geojson=pois, facts=facts, cfg=load_config(), reports_path=tmp / "reports.json",
-                     transit=Transit(None), geocoder=geocoder or Geocoder(None), realtime=Realtime(no_network),
+                     transit=transit or Transit(None), geocoder=geocoder or Geocoder(None), realtime=Realtime(no_network),
                      surveys=surveys or Surveys(None), buildings=buildings or Buildings(None))
     return TestClient(app)
 
