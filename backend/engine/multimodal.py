@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from engine.fleet import OK, vehicle_access
+from engine.profiles import get_profile
 
 WALK_SPEED_FALLBACK = 4.0
 
@@ -39,7 +40,7 @@ def plan(net, transit, realtime, origin: tuple, dest: tuple, keys: list, now: da
          accessible_only: bool | None = None, max_walk_m: int = 700, max_options: int = 3) -> dict:
     """origin/dest = (lon, lat); now = czas lokalny (naive, Europe/Warsaw)."""
     if accessible_only is None:
-        accessible_only = any(k.startswith("wozek") for k in keys)
+        accessible_only = any(k.startswith("wozek") or get_profile(k)["hard"].get("forbid_steps") for k in keys)
     out = {"walk_only": None, "options": [], "notes": [], "accessible_only": accessible_only, "excluded_inaccessible": 0}
     walk = net.route(origin, dest, keys, "warn")
     if walk is not None:
@@ -82,8 +83,15 @@ def plan(net, transit, realtime, origin: tuple, dest: tuple, keys: list, now: da
             r["walk_to"], r["walk_from"] = wb, wa
             r["arrive"] = r["arr"] + timedelta(minutes=wa["time_min"])
             cands.append(r)
-    seen, picked, excluded = set(), [], 0
+    seen, picked, excluded, useless = set(), [], 0, 0
+    walk_len = walk["length_m"] if walk is not None else None
     for r in sorted(cands, key=lambda r: r["arrive"]):
+        ride_min = (r["arr"] - r["dep"]).total_seconds() / 60
+        walk_m = r["walk_to"]["length_m"] + r["walk_from"]["length_m"]
+        # przejazd ma sens, gdy skraca marsz (przynajmniej o 15%) i trwa min. 3 min; bez trasy pieszej (zablokowanej) zostawiamy wszystko
+        if walk_len is not None and (walk_m >= 0.85 * walk_len or ride_min < 3):
+            useless += 1
+            continue
         sig = (r["line"], r["board"], r["alight"])
         if sig in seen:
             continue
@@ -100,7 +108,10 @@ def plan(net, transit, realtime, origin: tuple, dest: tuple, keys: list, now: da
     if excluded:
         out["notes"].append(f"Pominięto {excluded} przejazd(ów), bo nie ma potwierdzenia, że pojazd jest dostępny. "
                             "Dla tramwajów dostępność znamy dopiero, gdy ZTP przypisze pojazd do kursu (zwykle ok. godziny przed odjazdem).")
-    if not picked:
+    if not picked and useless:
+        out["notes"].append("Na tym dystansie komunikacja nie skraca marszu - pieszo jest najlepiej. "
+                            "(Przejazd bez przesiadki w obszarze demo wymagałby tyle samo chodzenia albo trwałby krócej niż 3 minuty.)")
+    elif not picked:
         out["notes"].append("Nie znaleziono przejazdu bez przesiadki w najbliższych 90 minutach (w obszarze demo).")
     options = []
     for i, r in enumerate(picked, 1):

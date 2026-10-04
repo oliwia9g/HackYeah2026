@@ -30,15 +30,19 @@ NOTE = ("Dane na żywo z ZTP (prognoza przyjazdu). Dostępność dotyczy pojazdu
         "i może się zmienić; brak informacji nie oznacza dostępności.")
 
 
-def _fetch_pb(name: str) -> bytes:
-    r = requests.get(BASE + name, headers=HEADERS, timeout=6)
-    r.raise_for_status()
-    return r.content
+def _make_fetcher(base: str):
+    def fetch(name: str) -> bytes:
+        r = requests.get(base + name, headers=HEADERS, timeout=6)
+        r.raise_for_status()
+        return r.content
+    return fetch
 
 
 class Realtime:
-    def __init__(self, fetcher=_fetch_pb):
-        self._fetch = fetcher
+    def __init__(self, fetcher=None, base: str | None = None):
+        """base: adres katalogu z plikami GTFS-RT (domyslnie ZTP Krakow; w config.yaml: transit.realtime_base)."""
+        self.base = base or BASE
+        self._fetch = fetcher or _make_fetcher(self.base)
         self._cache: dict = {}          # label -> {"at": ts, "arrivals": {...}, "vehicles": {...}}
 
     def _load(self, label: str) -> dict | None:
@@ -75,6 +79,18 @@ class Realtime:
         c = {"at": time.time(), "arrivals": arrivals, "vehicles": vehicles}
         self._cache[label] = c
         return c
+
+    def status(self) -> dict:
+        """Stan danych na zywo (do /api/health): czy ZTP odpowiada i jak stare sa dane z cache."""
+        out = {}
+        for label in FEEDS:
+            try:
+                c = self._load(label)
+            except Exception:
+                c = None
+            out[label] = {"ok": c is not None, "age_s": round(time.time() - c["at"]) if c else None,
+                          "pojazdow": len(c["vehicles"]) if c else 0}
+        return out
 
     def vehicle_for_trip(self, label: str, trip_id: str) -> dict | None:
         """Pojazd obslugujacy kurs w tej chwili ({label, wheelchair}) albo None (brak danych / ZTP niedostepne)."""
@@ -113,4 +129,4 @@ class Realtime:
             if len(rows) >= n:
                 break
         return {"available": True, "stale": stale, "updated_at": datetime.fromtimestamp(c["at"], TZ).strftime("%H:%M:%S"),
-                "note": NOTE, "source": "ZTP Kraków GTFS-Realtime", "source_url": BASE, "departures": rows}
+                "note": NOTE, "source": "ZTP Kraków GTFS-Realtime", "source_url": self.base, "departures": rows}

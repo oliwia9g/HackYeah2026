@@ -898,8 +898,8 @@ export default function MapPage({ theme }) {
                 )}
               </div>
               <div className="kbb-small kbb-muted">
-                <div>Punkt A: {points.pointA ? coordText(points.pointA) : addresses.from.trim() ? "z wpisanego adresu" : "nie wybrano"}</div>
-                <div>Punkt B: {points.pointB ? coordText(points.pointB) : addresses.to.trim() ? "z wpisanego adresu" : "nie wybrano"}</div>
+                <div>Punkt początkowy: {points.pointA ? coordText(points.pointA) : addresses.from.trim() ? "z wpisanego adresu" : "nie wybrano"}</div>
+                <div>Punkt końcowy: {points.pointB ? coordText(points.pointB) : addresses.to.trim() ? "z wpisanego adresu" : "nie wybrano"}</div>
               </div>
             </section>
 

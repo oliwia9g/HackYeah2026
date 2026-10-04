@@ -124,3 +124,48 @@ def make_osm_facts(pois, attributes: list[str], fresh_months: int, meta: Optiona
 #  - merge_conflicts(): ten sam feature_id+attribute z roznymi wartosciami -> status "sprzeczne"
 #    (zgloszenia uzytkownikow i sprzecznosci sa na razie obslugiwane w api/main.py)
 #  - fakt "brak": dla POI bez tagu wheelchair API zwraca status "brak", nie "yes"
+
+
+def drop_noise_buildings(pois, cfg: dict):
+    """Budynki bez nazwy i bez zadnego tagu dostepnosci niczego nie wnosza (tysiace anonimowych kamienic) - odrzucamy je.
+    Zostaja: budynki z nazwa albo z choc jednym tagiem dostepnosci, oraz wszystkie obiekty innych typow (sklepy, windy itd.)."""
+    if "building" not in pois.columns:
+        return pois
+    other = [c for c in ("amenity", "shop", "tourism", "leisure", "public_transport", "railway", "highway", "healthcare") if c in pois.columns]
+    has_other = pois[other].notna().any(axis=1) if other else pd.Series(False, index=pois.index)
+    acc_cols = [c for c in cfg["osm"]["fact_attributes"] if c in pois.columns]
+    has_acc = pois[acc_cols].notna().any(axis=1) if acc_cols else pd.Series(False, index=pois.index)
+    named = pois["name"].notna() if "name" in pois.columns else pd.Series(False, index=pois.index)
+    is_building_only = pois["building"].notna() & ~has_other
+    drop = is_building_only & ~named & ~has_acc
+    if drop.any():
+        print(f"  pominieto budynkow bez nazwy i bez tagow dostepnosci: {int(drop.sum())}")
+    return pois[~drop]
+
+
+BUILDING_TAGS = ["name", "building", "addr:street", "addr:housenumber", "addr:city", "addr:postcode", "addr:place"]
+
+
+def building_footprints(buildings, cfg: dict, exclude_ids: set | None = None) -> dict:
+    """Obrysy budynkow (wielokaty) jako GeoJSON: do klikania w mape (wspolrzedne -> budynek -> adres i cechy).
+    buildings: GeoDataFrame z indeksem (typ, id). Zostaja tylko Polygon/MultiPolygon. Wlasciwosci: feature_id, nazwa, rodzaj, adres
+    oraz tagi dostepnosci z config.yaml (fact_attributes), zeby klik mogl pokazac udogodnienia nawet dla budynku, ktorego nie ma wsrod POI."""
+    import shapely
+    from shapely.geometry import mapping
+
+    acc = [c for c in cfg["osm"]["fact_attributes"] if c in buildings.columns]
+    keep = [c for c in BUILDING_TAGS if c in buildings.columns] + acc
+    feats = []
+    for (el_type, osmid), row in buildings.iterrows():
+        g = row.geometry
+        if g is None or g.is_empty or g.geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        fid = f"{el_type}/{osmid}"
+        props = {"feature_id": fid}
+        for c in keep:
+            v = row.get(c)
+            if v is not None and not (isinstance(v, float) and pd.isna(v)):
+                props[c] = str(v)
+        g = shapely.set_precision(g, 1e-6)
+        feats.append({"type": "Feature", "geometry": mapping(g), "properties": props})
+    return {"type": "FeatureCollection", "features": feats}
