@@ -12,6 +12,7 @@ Zmienne srodowiskowe:
     TRUST_PROXY=1     za reverse proxy: adres klienta (limit zgloszen) z X-Forwarded-For
     CITY_CONFIG=cities/xxx.yaml   inne miasto (domyslnie config.yaml = Krakow)
     DATA_RAW_DIR / DATA_OUT_DIR / REPORTS_PATH   katalogi danych i plik zgloszen na serwerze (wolumen)
+    SIGNALS_PATH / PHOTOS_DIR   plik zgloszen spolecznosci (problemy w terenie) i katalog ich zdjec (wolumen)
     CORS_ORIGINS=https://front.example,https://inny.example   dozwolone domeny frontu (domyslnie *)
 
 Zasady (z briefu): kazda informacja ma zrodlo, date i status; brak danych != dostepne;
@@ -46,6 +47,7 @@ from engine.simple import simple_route, spoken_summary
 from engine.surveys import OBS_TYPES, Surveys
 from engine.realtime import Realtime
 from engine.transit import Transit
+from engine.signals import CATEGORIES as SIGNAL_CATEGORIES, SignalStore, clean_jpeg, clean_text
 from pipeline.common import ROOT, inside_aoi, load_aoi, load_config, out_dir
 
 # atrybuty pokazywane na karcie miejsca per profil (klucze = tagi OSM z config.yaml)
@@ -157,6 +159,23 @@ class Report(BaseModel):
     attribute: str = Field(..., max_length=64, examples=["wheelchair"])
     value: str = Field(..., max_length=100, examples=["no"])
     comment: str | None = Field(None, max_length=500)
+
+
+class SignalIn(BaseModel):
+    lon: float = Field(..., ge=-180, le=180)
+    lat: float = Field(..., ge=-90, le=90)
+    category: str = Field(..., max_length=40, examples=["zastawiony_chodnik"])
+    description: str = Field(..., min_length=3, max_length=500)
+    photo: str | None = Field(None, max_length=3_000_000, description="Zdjęcie JPEG zakodowane jako base64 (bez prefiksu data:)")
+    photo_alt: str | None = Field(None, max_length=200, description="Co widać na zdjęciu (dla osób niewidomych)")
+
+
+class VoteIn(BaseModel):
+    value: str = Field(..., pattern="^(up|down|none)$")
+
+
+class CommentIn(BaseModel):
+    text: str = Field(..., min_length=2, max_length=300)
 
 
 class Moderation(BaseModel):
@@ -511,7 +530,8 @@ a{{color:var(--link)}}a:focus-visible{{outline:3px solid currentColor;outline-of
 def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: list | None = None,
                cfg: dict | None = None, reports_path: Path | None = None, transit: Transit | None = None,
                realtime: Realtime | None = None, geocoder: Geocoder | None = None, surveys: Surveys | None = None,
-               buildings: Buildings | None = None) -> FastAPI:
+               buildings: Buildings | None = None, signals_path: Path | None = None,
+               photos_dir: Path | None = None) -> FastAPI:
     cfg = cfg or load_config()
     out = out_dir(cfg)
     if transit is None:
@@ -546,6 +566,11 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
     store = Store(net, pois_geojson, facts, cfg, reports_path or Path(os.getenv("REPORTS_PATH") or (ROOT / "data" / "reports.json")))
     if os.getenv("HACKYEAH_SEED") == "1":
         store.seed_demo_reports()
+    signals = SignalStore(signals_path or Path(os.getenv("SIGNALS_PATH") or (ROOT / "data" / "signals.json")),
+                          photos_dir or Path(os.getenv("PHOTOS_DIR") or (ROOT / "data" / "signal_photos")))
+    if os.getenv("HACKYEAH_SEED") == "1":
+        named = [(p["lon"], p["lat"]) for p in store.places.values() if p["name"]][:3]
+        signals.seed_demo(named)
     dev = os.getenv("HACKYEAH_DEV", "1") == "1"
     b = cfg["bbox"]
 
@@ -1498,6 +1523,115 @@ def create_app(net: Net | None = None, pois_geojson: dict | None = None, facts: 
         r["moderation_note"] = re.sub(r"[\x00-\x1f<>]", "", body.note or "")[:300] or None
         store.save_reports()
         return {"id": report_id, "moderation": r["moderation"]}
+
+
+    # ---------- zgloszenia spolecznosci: opis, zdjecie, glosy +/-, komentarze ----------
+    import base64
+    import binascii
+
+    @app.get("/api/signals/categories")
+    def signal_categories():
+        """Rodzaje problemów do formularza zgłoszenia."""
+        return {"categories": [{"id": k, "label": v} for k, v in SIGNAL_CATEGORIES.items()],
+                "limits": {"description": 500, "comment": 300, "photo_mb": 2, "photo_format": "JPEG"}}
+
+    @app.get("/api/signals")
+    def list_signals():
+        """Wszystkie widoczne zgłoszenia jako punkty (GeoJSON). Zgłoszenia są NIEZWERYFIKOWANE i nie zmieniają tras."""
+        return signals.collection()
+
+    @app.post("/api/signals", status_code=201)
+    def add_signal(sig: SignalIn, request: Request):
+        ip = client_ip(request)
+        if not store.rate_ok(f"sig:{ip}", limit=5):
+            raise HTTPException(429, detail="Za dużo zgłoszeń. Spróbuj później.")
+        if sig.category not in SIGNAL_CATEGORIES:
+            raise HTTPException(422, detail=f"Nieznany rodzaj problemu. Dozwolone: {sorted(SIGNAL_CATEGORIES)}")
+        if not inside(sig.lon, sig.lat):
+            raise HTTPException(422, detail="Zgłoszenia przyjmujemy na razie tylko w obszarze demo (Kraków-Śródmieście).")
+        if len(clean_text(sig.description, 500)) < 3:
+            raise HTTPException(422, detail="Opis jest za krótki.")
+        photo = None
+        if sig.photo:
+            try:
+                raw_b64 = sig.photo.split(",", 1)[-1]          # tolerujemy prefiks data:image/jpeg;base64,
+                photo, _, _ = clean_jpeg(base64.b64decode(raw_b64, validate=True))
+            except (binascii.Error, ValueError) as e:
+                raise HTTPException(422, detail=str(e) if isinstance(e, ValueError) and not isinstance(e, binascii.Error)
+                                    else "Zdjęcie nie jest poprawnym plikiem JPEG.")
+        s = signals.add(sig.lon, sig.lat, sig.category, sig.description, photo, sig.photo_alt)
+        return {"signal": signals.public(s, ip, detail=True), "status": "niezweryfikowane",
+                "message": "Dziękujemy. Zgłoszenie jest widoczne jako niezweryfikowane. Nie zmienia ono tras ani danych o miejscach.",
+                "wskazowka": "Zdjęcie jest publiczne. Dane lokalizacji ze zdjęcia (EXIF) usunęliśmy. Moderator może ukryć zgłoszenie."}
+
+    @app.get("/api/signals/{signal_id}")
+    def get_signal(signal_id: str, request: Request):
+        s = signals.get(signal_id)
+        if s is None:
+            raise HTTPException(404, detail="Nie znaleziono zgłoszenia")
+        return signals.public(s, client_ip(request), detail=True)
+
+    @app.get("/api/signals/{signal_id}/photo")
+    def signal_photo(signal_id: str):
+        p_ = signals.photo_path(signal_id)
+        if p_ is None:
+            raise HTTPException(404, detail="Brak zdjęcia")
+        return Response(p_.read_bytes(), media_type="image/jpeg",
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=3600",
+                                 "Content-Security-Policy": "default-src 'none'; sandbox"})
+
+    @app.post("/api/signals/{signal_id}/vote")
+    def vote_signal(signal_id: str, body: VoteIn, request: Request):
+        """Głos „+” (potwierdzam) lub „−” (nieaktualne/nieprawda). Jeden głos na urządzenie, można go zmienić lub cofnąć (none)."""
+        ip = client_ip(request)
+        if not store.rate_ok(f"vote:{ip}", limit=60):
+            raise HTTPException(429, detail="Za dużo głosów. Spróbuj później.")
+        s = signals.vote(signal_id, ip, body.value)
+        if s is None:
+            raise HTTPException(404, detail="Nie znaleziono zgłoszenia")
+        return signals.public(s, ip, detail=True)
+
+    @app.post("/api/signals/{signal_id}/comments", status_code=201)
+    def comment_signal(signal_id: str, body: CommentIn, request: Request):
+        ip = client_ip(request)
+        if not store.rate_ok(f"cmt:{ip}", limit=15):
+            raise HTTPException(429, detail="Za dużo komentarzy. Spróbuj później.")
+        if len(clean_text(body.text, 300)) < 2:
+            raise HTTPException(422, detail="Komentarz jest za krótki.")
+        if signals.comment(signal_id, body.text) is None:
+            raise HTTPException(404, detail="Nie znaleziono zgłoszenia")
+        return signals.public(signals.get(signal_id), ip, detail=True)
+
+    @app.get("/api/admin/signals")
+    def admin_signals(x_admin_token: str | None = Header(None)):
+        admin_ok(x_admin_token)
+        return [{**signals.public(s, detail=True), "moderation": s.get("moderation"),
+                 "comments": [{"id": c["id"], "text": c["text"], "moderation": c.get("moderation")} for c in s.get("comments", [])]}
+                for s in sorted(signals.items, key=lambda x: (x.get("moderation") is not None, -int(x.get("down", 0))))]
+
+    @app.post("/api/admin/signals/{signal_id}")
+    def admin_signal_action(signal_id: str, body: Moderation, x_admin_token: str | None = Header(None)):
+        """Ukrycie (odrzucone, np. twarz na zdjęciu) lub oznaczenie jako sprawdzone (zaakceptowane)."""
+        admin_ok(x_admin_token)
+        s = signals.get(signal_id, include_hidden=True)
+        if s is None:
+            raise HTTPException(404, detail="Nie znaleziono zgłoszenia")
+        s["moderation"] = body.action
+        s["moderated_at"] = datetime.now(timezone.utc).isoformat()
+        s["moderation_note"] = clean_text(body.note, 300) or None
+        signals.save()
+        return {"id": signal_id, "moderation": s["moderation"]}
+
+    @app.post("/api/admin/signals/{signal_id}/comments/{comment_id}")
+    def admin_comment_action(signal_id: str, comment_id: str, body: Moderation, x_admin_token: str | None = Header(None)):
+        admin_ok(x_admin_token)
+        s = signals.get(signal_id, include_hidden=True)
+        c = next((x for x in (s or {}).get("comments", []) if x["id"] == comment_id), None)
+        if c is None:
+            raise HTTPException(404, detail="Nie znaleziono komentarza")
+        c["moderation"] = body.action
+        signals.save()
+        return {"id": comment_id, "moderation": c["moderation"]}
 
     if dev:
         @app.post("/api/dev/outage")

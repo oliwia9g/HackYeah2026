@@ -96,7 +96,7 @@ Część piesza (OSM + NMT) jest niezależna od miasta w Polsce. Część komuni
   Największy ukryty koszt to **praca ludzka**: moderacja zgłoszeń i audyty terenowe, nie serwery (patrz `BIZNES.md`).
 - **Skala:** siatka i miejsca są w pamięci procesu. Dla Śródmieścia to niewiele; dla całego Krakowa trzeba **zmierzyć** zużycie RAM i czas startu **[niesprawdzone]**.
   Skalowanie poziome: API jest bezstanowe poza (a) zgłoszeniami w pliku i (b) licznikami limitów w pamięci – w produkcji: PostgreSQL/PostGIS dla zgłoszeń, Redis dla limitów, kilka replik za load balancerem.
-- **Zmienne środowiskowe:** `ADMIN_TOKEN`, `CORS_ORIGINS`, `TRUST_PROXY`, `CITY_CONFIG`, `DATA_RAW_DIR`, `DATA_OUT_DIR`, `REPORTS_PATH`, `HACKYEAH_DEV=0` (opis w nagłówku `api/main.py`).
+- **Zmienne środowiskowe:** `ADMIN_TOKEN`, `CORS_ORIGINS`, `TRUST_PROXY`, `CITY_CONFIG`, `DATA_RAW_DIR`, `DATA_OUT_DIR`, `REPORTS_PATH`, `SIGNALS_PATH` i `PHOTOS_DIR` (zgłoszenia społeczności i ich zdjęcia, też na wolumen), `HACKYEAH_DEV=0` (opis w nagłówku `api/main.py`).
 
 ## 5. Prywatność i bezpieczeństwo
 
