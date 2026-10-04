@@ -4,6 +4,9 @@ import Navbar from "./components/Navbar";
 import MapPage from "./pages/MapPage";
 import Home from "./pages/Home";
 import ProfileSetup from "./components/ProfileSetup";
+import ReadAloud from "./components/ReadAloud";
+import DataPage from "./pages/DataPage";
+import "./kbb.css";
 
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("siteTheme") || "light");
@@ -24,7 +27,9 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/mappage" element={<MapPage theme={theme} />} />
         <Route path="/profil" element={<ProfileSetup />} />
+        <Route path="/dane" element={<DataPage theme={theme} />} />
       </Routes>
+      <ReadAloud />
     </BrowserRouter>
   );
 }

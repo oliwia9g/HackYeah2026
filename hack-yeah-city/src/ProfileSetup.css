@@ -63,17 +63,18 @@
 /* Siatka kafelków profili */
 .tiles-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
 @media (max-width: 600px) {
   .tiles-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 .mini-tile {
+  min-width: 0;
   background: #f8fafc;
   border: 2px solid #e2e8f0;
   border-radius: 10px;
@@ -175,7 +176,7 @@
 }
 
 .btn-primary {
-  background: #E15A4F;
+  background: #C2372D;
   color: white;
   border: none;
   padding: 10px 20px;
@@ -186,7 +187,7 @@
 }
 
 .btn-primary:hover {
-  background: #C94B41;
+  background: #A82B22;
 }
 
 .btn-secondary {
@@ -252,6 +253,10 @@
   border-color: var(--brand-turquoise);
 }
 
+:root[data-theme="dark"] .mini-tile .tile-icon img {
+  filter: invert(1);
+}
+
 :root[data-theme="dark"] .btn-secondary {
   color: var(--text-primary);
   border-color: var(--line-color);
@@ -260,3 +265,21 @@
 :root[data-theme="dark"] .btn-secondary:hover {
   background: #3a344b;
 }
+/* Wybór poziomów (zamiast suwaków z liczbami) i wyrównanie opisów */
+.profile-card .section-block { text-align: left; }
+.profile-card .section-block h3 { text-align: left; }
+.form-note { text-align: left; margin-top: 8px; margin-bottom: 0; }
+.check-label { align-items: flex-start; text-align: left; font-size: 14px; }
+.check-label input { margin-top: 3px; flex: none; }
+.choice-group { border: 0; padding: 0; margin: 0 0 18px; min-width: 0; }
+.choice-group legend { font-weight: 700; font-size: 14px; color: #0f172a; margin-bottom: 8px; padding: 0; }
+.choice-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.choice-option { display: flex; gap: 8px; align-items: flex-start; text-align: left; padding: 10px 12px; border: 2px solid #cbd5e1; border-radius: 10px; cursor: pointer; font-size: 14px; color: #334155; background: #ffffff; }
+.choice-option input { margin-top: 3px; flex: none; accent-color: #58B6C6; }
+.choice-option small { display: block; color: #475569; font-size: 12px; }
+.choice-option.active { border-color: #2c8a9b; background: #e6f6f8; }
+.choice-option:focus-within { outline: 3px solid #1a4fd6; outline-offset: 2px; }
+:root[data-theme="dark"] .choice-group legend { color: var(--text-primary); }
+:root[data-theme="dark"] .choice-option { background: var(--surface); color: var(--text-primary); border-color: #5b5475; }
+:root[data-theme="dark"] .choice-option small { color: #d9d5e6; }
+:root[data-theme="dark"] .choice-option.active { background: #3a344b; border-color: #58b6c6; }

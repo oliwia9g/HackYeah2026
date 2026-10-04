@@ -1,37 +1,39 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Tile from "../components/Tile";
+import { saveGroupOnly } from "../prefs";
+import { setAutoRead, speak } from "../speech";
 import "../Home.css";
 
 const profiles = [
   {
     id: "wozek_inwalidzki",
-    title: "Wózek inwalidzki",
+    title: "Osoba poruszająca się na wózku",
     icon: "/disabled.png",
   },
   {
     id: "wozek_dziecko",
-    title: "Wózek dziecięcy",
+    title: "Osoba z wózkiem dziecięcym",
     icon: "/little-kid.png",
   },
   {
     id: "niewidomy_slabowidzacy",
-    title: "Niewidomy / słabowidzący",
+    title: "Osoba niewidoma lub słabowidząca",
     icon: "/eye.png",
   },
   {
     id: "gluchy_niedoslyszacy",
-    title: "Głuchy / niedosłyszący",
+    title: "Osoba głucha lub niedosłysząca",
     icon: "/ear.png",
   },
   {
     id: "senior",
-    title: "Senior",
+    title: "Osoba starsza",
     icon: "/old-man.png",
   },
   {
     id: "ciaza",
-    title: "Ciąża",
+    title: "Kobieta w ciąży",
     icon: "/pregnant.png",
   },
 ];
@@ -52,18 +54,28 @@ export default function Home() {
   const handleSelect = (profileId) => {
     setSelectedProfile(profileId);
 
-    localStorage.setItem(
-      "userAccessibilityProfile",
-      JSON.stringify(profileId)
+    // zapamiętujemy grupę na urządzeniu; szczegółowe ustawienia wracają do domyślnych tej grupy
+    saveGroupOnly(profileId);
+
+    // wybór profilu osoby niewidomej włącza czytanie wszystkiego na każdej stronie (można wyciszyć przyciskiem w rogu)
+    const blind = profileId === "niewidomy_slabowidzacy";
+    setAutoRead(blind);
+    const title = profiles.find((p) => p.id === profileId)?.title || "";
+    // lekkie opóźnienie, żeby czytnik elementów (fokus na kafelku) nie przerwał potwierdzenia
+    setTimeout(
+      () =>
+        speak(
+          blind
+            ? `Wybrano: ${title}. Od teraz czytam na głos wszystko na każdej stronie. Możesz to wyciszyć przyciskiem w prawym dolnym rogu.`
+            : `Wybrano: ${title}.`,
+          { auto: true }
+        ),
+      400
     );
   };
 
   const handleGoToMap = () => {
-    if (!selectedProfile) {
-      alert("Najpierw wybierz profil użytkownika.");
-      return;
-    }
-
+    // wybór profilu jest tylko skrótem; do mapy można przejść bez niego
     navigate("/mappage");
   };
 
@@ -72,14 +84,15 @@ export default function Home() {
       <div className="home-content">
         <section className="hero-section">
           <p className="eyebrow">Kraków Bez Barier</p>
-          <h1>Wybierz swój profil, a my wyznaczymy najbezpieczniejszą trasę.</h1>
+          <h1>Wybierz, czego potrzebujesz na trasie, a pokażemy warianty z przeszkodami i brakami danych.</h1>
           <p className="hero-description">
-            Kraków Bez Barier. Wybierz swój profil, a my wyznaczymy najbezpieczniejszą
-            trasę omijającą schody, strome podjazdy i wysokie krawężniki.
+            Kraków Bez Barier. Wybierz gotowy zestaw wymagań, a my zaproponujemy trasy omijające
+            schody, strome podjazdy i wysokie krawężniki tam, gdzie mamy o nich dane, i uczciwie
+            powiemy, gdzie danych brakuje.
           </p>
         </section>
 
-        <p className="subtitle">Wybierz profil, aby dopasować trasę do Twoich potrzeb.</p>
+        <p className="subtitle">Dotknij kafelka, który najlepiej opisuje Twoje potrzeby, a ustawienia trasy dobierzemy za Ciebie. Możesz też pominąć ten krok i od razu przejść do planowania trasy.</p>
 
         <div className="tiles">
           {profiles.map((profile) => (
@@ -105,7 +118,6 @@ export default function Home() {
             type="button"
             className="primary-button"
             onClick={handleGoToMap}
-            disabled={!selectedProfile}
           >
             Przejdź do planowania trasy
           </button>
@@ -124,7 +136,7 @@ export default function Home() {
             </div>
             <div className="step">
               <span>3</span>
-              <p>Ruszaj w drogę po bezpiecznej trasie z pominięciem barier.</p>
+              <p>Porównaj warianty trasy, zobacz przeszkody i miejsca, o których brakuje danych.</p>
             </div>
           </div>
         </section>

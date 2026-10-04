@@ -2,7 +2,7 @@
   "order": [
     {
       "key": "wozek_inwalidzki",
-      "label": "Wózek inwalidzki",
+      "label": "Osoba poruszająca się na wózku",
       "needs": [
         "windy",
         "toalety_dostepne",
@@ -12,7 +12,7 @@
     },
     {
       "key": "wozek_dziecko",
-      "label": "Wózek z dzieckiem",
+      "label": "Osoba z wózkiem dziecięcym",
       "needs": [
         "przewijak",
         "windy",
@@ -22,7 +22,7 @@
     },
     {
       "key": "niewidomy_slabowidzacy",
-      "label": "Osoba niewidoma / słabowidząca",
+      "label": "Osoba niewidoma lub słabowidząca",
       "needs": [
         "prowadzenie_dotykowe",
         "sygnalizacja_dzwiekowa",
@@ -32,7 +32,7 @@
     },
     {
       "key": "gluchy_niedoslyszacy",
-      "label": "Osoba głucha / niedosłysząca",
+      "label": "Osoba głucha lub niedosłysząca",
       "needs": [
         "petla_indukcyjna",
         "informacja_wizualna",
@@ -41,7 +41,7 @@
     },
     {
       "key": "senior",
-      "label": "Senior",
+      "label": "Osoba starsza",
       "needs": [
         "lawki",
         "toalety",
