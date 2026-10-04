@@ -69,6 +69,8 @@ async function request(path, params, init) {
 }
 
 const get = (path, params) => request(path, params);
+const post = (path, body) =>
+  request(path, null, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const api = {
   health: () => get("/api/health"),
@@ -103,7 +105,16 @@ export const api = {
       body: JSON.stringify(body),
     }),
   place: (id, params) => get(`/api/places/${encodeURI(id)}`, params),
+  // zgłoszenia społeczności: problem w terenie, zdjęcie, głosy +/−, komentarze
+  signalCategories: () => get("/api/signals/categories"),
+  signals: () => get("/api/signals"),
+  signal: (id) => get(`/api/signals/${encodeURIComponent(id)}`),
+  createSignal: (body) => post("/api/signals", body),
+  voteSignal: (id, value) => post(`/api/signals/${encodeURIComponent(id)}/vote`, { value }),
+  commentSignal: (id, text) => post(`/api/signals/${encodeURIComponent(id)}/comments`, { text }),
 };
+
+export const signalPhotoUrl = (path) => (path ? API + path : null);
 
 export function embedUrl(placeId, prefs) {
   return buildUrl(`/embed/place/${encodeURI(placeId)}`, { prefs });

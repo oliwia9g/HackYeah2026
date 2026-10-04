@@ -21,6 +21,7 @@ const ODSWIEZANIE = [
   ["MPK / wykaz taboru", "czy tramwaj lub autobus ma niską podłogę", "ręcznie, gdy zmieni się flota (zakładamy: co kwartał)", "Brak informacji oznacza „nie wiadomo”, nigdy „dostępny”."],
   ["Naloty dronem i kontrole terenowe", "zastawione chodniki, remonty, zniszczona nawierzchnia", "cel: co 3 miesiące", "Brak nalotu to „brak nalotu”. Starsze dane oznaczamy jako nieświeże."],
   ["Zgłoszenia użytkowników", "poprawki i uzupełnienia dostępności miejsc", "na bieżąco", "Zawsze „niezweryfikowane”, pokazywane obok danych ze źródła, nigdy ich nie nadpisują."],
+  ["Zgłoszenia społeczności (problemy w terenie)", "punkt na mapie z opisem, opcjonalnym zdjęciem, głosami +/− i komentarzami", "na bieżąco", "Zawsze „niezweryfikowane” (chyba że sprawdzi je moderator). Nie zmieniają tras ani danych o miejscach."],
 ];
 
 const WCAG_ZROBIONE = [
@@ -316,6 +317,7 @@ export default function DataPage({ theme }) {
             <li>Ustawienia zostają w Twojej przeglądarce. Możesz zapisać je do pliku i wczytać na innym urządzeniu. Serwer tylko sprawdza poprawność pliku i niczego nie zapisuje.</li>
             <li>Pozycja z urządzenia jest pobierana dopiero po kliknięciu i nie jest zapisywana na serwerze.</li>
             <li>Rozpoznawanie i czytanie mowy robi przeglądarka; do serwera trafia tylko tekst polecenia. Przeglądarka może korzystać z usługi swojego dostawcy.</li>
+            <li>Zdjęcia do zgłoszeń są publiczne. Serwer przyjmuje tylko JPEG do 2 MB i usuwa z niego dane EXIF (m.in. współrzędne GPS i model telefonu). Formularz prosi, by nie fotografować twarzy i tablic rejestracyjnych, a moderator może zgłoszenie ukryć. Głosy „+/−” liczymy raz na urządzenie, bez zapisywania adresu.</li>
             <li>Zgłoszenia nie zawierają danych osobowych. Limit zgłoszeń na adres chroni przed nadużyciami; adresów IP nie zapisujemy.</li>
             <li>Zabezpieczenia: walidacja wejścia, czyszczenie znaczników, nagłówki bezpieczeństwa, ograniczony CORS, moderacja chroniona tokenem.</li>
             <li>Do zrobienia: limity na serwerze pośredniczącym, HTTPS na produkcji, audyt zależności, kopie zapasowe zgłoszeń, polityka prywatności.</li>
