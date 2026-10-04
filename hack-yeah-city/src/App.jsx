@@ -7,6 +7,7 @@ import ProfileSetup from "./components/ProfileSetup";
 import ReadAloud from "./components/ReadAloud";
 import DataPage from "./pages/DataPage";
 import "./kbb.css";
+import ScrollToTop from "./components/ScrollToTop";
 
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("siteTheme") || "light");
@@ -18,11 +19,12 @@ function App() {
 
   return (
     <BrowserRouter>
+    
       <Navbar
         theme={theme}
         onToggleTheme={() => setTheme((current) => current === "light" ? "dark" : "light")}
       />
-
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/mappage" element={<MapPage theme={theme} />} />
