@@ -166,7 +166,12 @@
 }
 
 .profile-tile.selected .tile-selection {
-  color: var(--tile-accent);
+  color: #1a1530;
+  font-weight: 700;
+}
+
+:root[data-theme="dark"] .profile-tile.selected .tile-selection {
+  color: #ffffff;
 }
 
 .action-section {

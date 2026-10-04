@@ -1,5 +1,6 @@
 // Asystent: pole tekstowe + mikrofon + odpowiedź czytana na głos. Polecenie idzie do /api/voice/command jako zwykły tekst.
 import { useState } from "react";
+import Icon from "./Icons";
 
 export default function Assistant({ onSubmit, reply, heard, micSupported, listening, onMic, onRepeat, big }) {
   const [text, setText] = useState("");
@@ -36,12 +37,12 @@ export default function Assistant({ onSubmit, reply, heard, micSupported, listen
             aria-pressed={listening}
             aria-label="Powiedz polecenie"
           >
-            🎤 {listening ? "Słucham…" : "Powiedz polecenie"}
+            <Icon name="mic" /> {listening ? "Słucham…" : "Powiedz polecenie"}
           </button>
         ) : (
           <span className="kbb-small kbb-muted">Ta przeglądarka nie ma rozpoznawania mowy. Wpisz polecenie w pole powyżej.</span>
         )}
-        <button type="button" className="kbb-btn" onClick={onRepeat}>🔊 Powtórz odpowiedź</button>
+        <button type="button" className="kbb-btn" onClick={onRepeat}><Icon name="speaker" /> Powtórz odpowiedź</button>
       </div>
       {micSupported && (
         <p className="kbb-small kbb-muted">

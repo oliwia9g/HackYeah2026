@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { L, hours, km } from "../format";
+import Icon from "./Icons";
 
 const SEVERITY = {
   blokada: { icon: "✕", word: "Przeszkoda", cls: "bad" },
@@ -54,8 +56,8 @@ function Variants({ routes, selected, onSelect, recommended }) {
                 {isRecommended && <span className="kbb-badge">★ Polecana</span>}
               </span>
               <span style={{ display: "block" }}>
-                {p.length_m} m · {Math.round(p.time_min)} min
-                {p.extra_m > 0 ? ` · o ${p.extra_m} m dłużej niż najkrótsza` : ""}
+                {km(p.length_m)} · {hours(p.time_min)}
+                {p.extra_m > 0 ? ` · o ${km(p.extra_m)} dłużej niż najkrótsza` : ""}
               </span>
               <Counts counts={p.hazard_counts} />
               {Array.isArray(p.tez_jako) && p.tez_jako.length > 0 && (
@@ -84,7 +86,7 @@ function HazardList({ hazards }) {
               <span className="kbb-ico" aria-hidden="true">{s.icon}</span>
               <span>
                 <strong>{s.word}</strong>
-                {h.at_m !== undefined ? `, po ${h.at_m} m` : ""}: {h.text}
+                {h.at_m !== undefined ? `, po ${km(h.at_m)}` : ""}: {L(h.text)}
                 {h.street ? ` (${h.street})` : ""}
                 {h.source ? <span className="kbb-small kbb-muted"> · źródło: {h.source}</span> : null}
               </span>
@@ -109,7 +111,7 @@ function StepList({ steps }) {
               <span className="kbb-ico" aria-hidden="true">{s.icon}</span>
               <span>
                 <span className="sr-only">{s.word}: </span>
-                {step.text}
+                {L(step.text)}
               </span>
             </li>
           );
@@ -136,8 +138,8 @@ function StandardView({ resp, selected, onSelect, onSpeak }) {
         ))}
         {p.nalot?.text && <p className="kbb-small kbb-muted">{p.nalot.text}</p>}
         <div className="kbb-toolbar">
-          <button type="button" className="kbb-btn" onClick={() => onSpeak(p.spoken_summary)}>
-            🔊 Przeczytaj trasę
+          <button type="button" className="kbb-btn" onClick={() => onSpeak(L(p.spoken_summary))}>
+            <Icon name="speaker" /> Przeczytaj trasę
           </button>
         </div>
         <HazardList hazards={p.hazards} />
@@ -155,10 +157,10 @@ function SimpleView({ resp, selected, onSelect, onSpeak }) {
   const simple = p.simple || { summary: p.spoken_summary, steps: [] };
   return (
     <>
-      <h2>{simple.summary}</h2>
+      <h2>{L(simple.summary)}</h2>
       <div className="kbb-toolbar">
-        <button type="button" className="kbb-btn kbb-btn-primary" onClick={() => onSpeak(p.spoken_summary || simple.summary)}>
-          🔊 Przeczytaj
+        <button type="button" className="kbb-btn kbb-btn-primary" onClick={() => onSpeak(L(p.spoken_summary || simple.summary))}>
+          <Icon name="speaker" /> Przeczytaj
         </button>
         {resp.routes.length > 1 && (
           <button type="button" className="kbb-btn" onClick={() => setShowOthers((v) => !v)} aria-expanded={showOthers}>
@@ -175,16 +177,16 @@ function SimpleView({ resp, selected, onSelect, onSpeak }) {
               <div>
                 <span className="kbb-arrow" aria-hidden="true">{ARROWS[step.turn] || "↑"}</span>
                 <span className="sr-only">Krok {step.n}, {TURN_WORD[step.turn] || ""}. </span>
-                {step.text}
+                {L(step.text)}
               </div>
               {step.warning && (
                 <div className="kbb-item kbb-item-warn" style={{ marginTop: 8 }}>
                   <span className="kbb-ico" aria-hidden="true">!</span>
-                  <span>{step.warning_text}</span>
+                  <span>{L(step.warning_text)}</span>
                 </div>
               )}
-              <button type="button" className="kbb-btn" style={{ marginTop: 8 }} onClick={() => onSpeak(step.text)}>
-                🔊 Przeczytaj krok
+              <button type="button" className="kbb-btn" style={{ marginTop: 8 }} onClick={() => onSpeak(L(step.text))}>
+                <Icon name="speaker" /> Przeczytaj krok
               </button>
             </div>
           </li>
@@ -195,51 +197,13 @@ function SimpleView({ resp, selected, onSelect, onSpeak }) {
   );
 }
 
-// Tryb skupienia: tylko bieżący krok, „Dalej / Wstecz / Powtórz”, postęp tekstem
-function FocusView({ resp, selected, stepIndex, setStepIndex, onSpeak }) {
-  const p = resp.routes[selected].properties;
-  const simple = p.simple || { summary: p.spoken_summary, steps: [] };
-  const steps = simple.steps;
-  if (!steps.length) return <h2>{simple.summary}</h2>;
-  const index = Math.min(stepIndex, steps.length - 1);
-  const step = steps[index];
-  return (
-    <>
-      <p>{simple.summary}</p>
-      <p className="kbb-muted" aria-live="polite">Krok {index + 1} z {steps.length}</p>
-      <div className="kbb-step-card" role="group" aria-label={`Krok ${index + 1} z ${steps.length}`}>
-        <span className="kbb-step-n" aria-hidden="true">{step.n}</span>
-        <div>
-          <span className="kbb-arrow" aria-hidden="true">{ARROWS[step.turn] || "↑"}</span>
-          {step.text}
-          {step.warning && (
-            <div className="kbb-item kbb-item-warn" style={{ marginTop: 8 }}>
-              <span className="kbb-ico" aria-hidden="true">!</span>
-              <span>{step.warning_text}</span>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="kbb-toolbar" style={{ marginTop: 12 }}>
-        <button type="button" className="kbb-btn" disabled={index === 0} onClick={() => setStepIndex(index - 1)}>Wstecz</button>
-        <button type="button" className="kbb-btn kbb-btn-primary" disabled={index >= steps.length - 1} onClick={() => setStepIndex(index + 1)}>Dalej</button>
-        <button type="button" className="kbb-btn" onClick={() => onSpeak(step.text)}>🔊 Powtórz</button>
-      </div>
-    </>
-  );
-}
-
-export default function RoutePanel({ resp, selected, onSelect, mode, stepIndex, setStepIndex, onSpeak }) {
+export default function RoutePanel({ resp, selected, onSelect, mode, onSpeak }) {
   if (!resp?.routes?.length) return null;
   return (
     <section className="kbb-card" aria-labelledby="routes-heading">
-      {mode === "standard" && <h2 id="routes-heading">Trasy</h2>}
-      {mode !== "standard" && <h2 id="routes-heading" className="sr-only">Trasa</h2>}
+      {mode === "standard" ? <h2 id="routes-heading">Trasy</h2> : <h2 id="routes-heading" className="sr-only">Trasa</h2>}
       {mode === "standard" && <StandardView resp={resp} selected={selected} onSelect={onSelect} onSpeak={onSpeak} />}
       {mode === "prosty" && <SimpleView resp={resp} selected={selected} onSelect={onSelect} onSpeak={onSpeak} />}
-      {mode === "skupienie" && (
-        <FocusView resp={resp} selected={selected} stepIndex={stepIndex} setStepIndex={setStepIndex} onSpeak={onSpeak} />
-      )}
     </section>
   );
 }

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import Icon from "./Icons";
+import { km } from "../format";
 import { api } from "../api";
 
 const STATUS_WORD = {
@@ -128,7 +130,7 @@ export default function PlacePanel({ info, mode, onRouteHere, onSpeak, onClose, 
       {addr ? (
         <p>
           {addr.approximate ? (
-            <>Najbliższy adres: <strong>{addr.label}</strong> (około {addr.distance_m} m stąd)</>
+            <>Najbliższy adres: <strong>{addr.label}</strong> (około {km(addr.distance_m)} stąd)</>
           ) : (
             <>Adres: <strong>{addr.label}</strong></>
           )}
@@ -140,7 +142,7 @@ export default function PlacePanel({ info, mode, onRouteHere, onSpeak, onClose, 
       <p>{info.summary?.text}</p>
 
       <div className="kbb-toolbar">
-        <button type="button" className="kbb-btn" onClick={() => onSpeak(info.spoken)}>🔊 Przeczytaj</button>
+        <button type="button" className="kbb-btn" onClick={() => onSpeak(info.spoken)}><Icon name="speaker" /> Przeczytaj</button>
         {place && (
           <button type="button" className="kbb-btn kbb-btn-primary" onClick={() => onRouteHere(info)}>
             Trasa tutaj
@@ -268,7 +270,7 @@ export default function PlacePanel({ info, mode, onRouteHere, onSpeak, onClose, 
                 <button type="button" className="kbb-btn-link" onClick={() => onOpenPlace(o)}>
                   {o.name || o.kind}
                 </button>
-                {` (${o.kind}) · w linii prostej: ${o.distance_m} m`}
+                {` (${o.kind}) · w linii prostej: ${km(o.distance_m)}`}
                 {o.wheelchair?.value_text ? ` · dostępność: ${o.wheelchair.value_text} (${STATUS_WORD[o.wheelchair.status] || o.wheelchair.status})` : ""}
               </li>
             ))}

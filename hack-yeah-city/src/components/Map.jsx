@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import proj4 from "proj4";
+import { L, km } from "../format";
 
 // Podkład mapy. Bez klucza API: Esri World Street Map (dane m.in. z OpenStreetMap).
 // Inny dostawca: ustaw VITE_TILES w .env.local (adres z {z}/{x}/{y}) i VITE_TILES_ATTRIBUTION.
@@ -324,8 +325,8 @@ function hazardPopup(hazard) {
   title.textContent = SEVERITY_TEXT[hazard.severity] || "Uwaga";
   root.appendChild(title);
   const lines = [
-    hazard.text,
-    hazard.at_m !== undefined ? `Po ${hazard.at_m} m od startu` : null,
+    L(hazard.text),
+    hazard.at_m !== undefined ? `Po ${km(hazard.at_m)} od startu` : null,
     hazard.street ? `Ulica: ${hazard.street}` : null,
     hazard.source ? `Źródło: ${hazard.source}` : null,
   ].filter(Boolean);
@@ -344,6 +345,44 @@ function createPinMarker(pin) {
   el.textContent = pin.label ?? "";
   el.setAttribute("aria-label", pin.aria || pin.title || "Punkt na mapie");
   el.title = pin.title || "";
+  return el;
+}
+
+// Maska "wszystko poza obszarem demo": prostokąt świata z dziurą w kształcie obszaru (przyciemnia to, czego nie obejmujemy).
+function outsideMask(aoiData) {
+  const geom = aoiData?.type === "FeatureCollection" ? aoiData.features?.[0]?.geometry : aoiData?.geometry || aoiData;
+  if (!geom) return null;
+  const polygons = geom.type === "Polygon" ? [geom.coordinates] : geom.type === "MultiPolygon" ? geom.coordinates : [];
+  if (!polygons.length) return null;
+  const world = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+  return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [world, ...polygons.map((p) => p[0])] } };
+}
+
+function stopPopup(props) {
+  const root = document.createElement("div");
+  root.className = "kbb-popup";
+  const title = document.createElement("strong");
+  title.textContent = `${props.mode === "tramwaj" ? "Przystanek tramwajowy" : "Przystanek autobusowy"}: ${props.name}`;
+  root.appendChild(title);
+  const lines = [
+    props.lines?.length ? `Linie: ${props.lines.join(", ")}` : null,
+    `Dostępność przystanku: ${props.wheelchair_boarding_text || "brak danych"}`,
+    "Źródło: rozkład ZTP Kraków",
+  ].filter(Boolean);
+  lines.forEach((line) => {
+    const d = document.createElement("div");
+    d.textContent = line; // textContent: nazwy nigdy nie są traktowane jako HTML
+    root.appendChild(d);
+  });
+  return new maplibregl.Popup({ offset: 14, closeButton: true }).setDOMContent(root);
+}
+
+function createStopMarker(props) {
+  const el = document.createElement("div");
+  el.className = `kbb-stop kbb-stop-${props.mode === "tramwaj" ? "tram" : "bus"}`;
+  el.textContent = props.mode === "tramwaj" ? "T" : "A";
+  el.title = `${props.mode === "tramwaj" ? "Tramwaj" : "Autobus"}: ${props.name}`;
+  el.setAttribute("aria-hidden", "true"); // te same informacje są w liście „Przystanki w pobliżu”
   return el;
 }
 
@@ -377,6 +416,7 @@ const Map = forwardRef(function Map(
     footprint = null,
     observations = null,
     showObservations = false,
+    stops = null,
     area, // undefined = jeszcze się wczytuje, null = brak (używamy pliku zapasowego), obiekt = Feature z /api/area
     theme = "light",
     clickMode = "route",
@@ -399,6 +439,7 @@ const Map = forwardRef(function Map(
   const reduceMotionRef = useRef(reduceMotion);
   const hazardMarkersRef = useRef([]);
   const pinMarkersRef = useRef([]);
+  const stopMarkersRef = useRef([]);
   const lastRoutesRef = useRef(null);
 
   useEffect(() => {
@@ -494,7 +535,7 @@ const Map = forwardRef(function Map(
 
     map.on("click", (e) => {
       // klik w znacznik zagrożenia / wyniku nie jest klikiem w mapę
-      if (e.originalEvent?.target?.closest?.(".kbb-hazard, .kbb-pin, .maplibregl-popup")) return;
+      if (e.originalEvent?.target?.closest?.(".kbb-hazard, .kbb-pin, .kbb-stop, .maplibregl-popup")) return;
       const coords = { lng: e.lngLat.lng, lat: e.lngLat.lat };
 
       // tryb "sprawdź miejsce": klik trafia do /api/at, nie zmienia trasy
@@ -521,6 +562,7 @@ const Map = forwardRef(function Map(
       markerState.markerB?.remove();
       hazardMarkers.current.forEach((m) => m.remove());
       pinMarkers.current.forEach((m) => m.remove());
+      stopMarkersRef.current.forEach((m) => m.remove());
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
@@ -565,20 +607,16 @@ const Map = forwardRef(function Map(
         if (cancelled) return;
         if (map.getSource("aoi-source")) {
           map.getSource("aoi-source").setData(aoiData);
+          map.getSource("aoi-mask-source")?.setData(outsideMask(aoiData) || { type: "FeatureCollection", features: [] });
         } else {
           map.addSource("aoi-source", { type: "geojson", data: aoiData });
-          map.addLayer({
-            id: "aoi-fill",
-            type: "fill",
-            source: "aoi-source",
-            paint: { "fill-color": "#58b6c6", "fill-opacity": 0.1 },
-          });
-          map.addLayer({
-            id: "aoi-outline",
-            type: "line",
-            source: "aoi-source",
-            paint: { "line-color": "#7a6cb1", "line-width": 3, "line-opacity": 0.95, "line-dasharray": [3, 2] },
-          });
+          map.addSource("aoi-mask-source", { type: "geojson", data: outsideMask(aoiData) || { type: "FeatureCollection", features: [] } });
+          // pod trasami i znacznikami: przyciemnienie świata poza obszarem, półprzezroczyste wypełnienie i obrys
+          const below = map.getLayer("routes-alt") ? "routes-alt" : undefined;
+          map.addLayer({ id: "aoi-mask", type: "fill", source: "aoi-mask-source", paint: { "fill-color": "#1a1530", "fill-opacity": 0.32 } }, below);
+          map.addLayer({ id: "aoi-fill", type: "fill", source: "aoi-source", paint: { "fill-color": "#7a6cb1", "fill-opacity": 0.14 } }, below);
+          map.addLayer({ id: "aoi-casing", type: "line", source: "aoi-source", paint: { "line-color": "#ffffff", "line-width": 6, "line-opacity": 0.9 } }, below);
+          map.addLayer({ id: "aoi-outline", type: "line", source: "aoi-source", paint: { "line-color": "#4b3f8f", "line-width": 3 } }, below);
         }
         const bounds = boundsOf(aoiData);
         if (bounds) {
@@ -692,6 +730,25 @@ const Map = forwardRef(function Map(
       pinMarkersRef.current.push(marker);
     });
   }, [pins]);
+
+  // Wszystkie przystanki (T = tramwaj, A = autobus): litera, nie tylko kolor
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    stopMarkersRef.current.forEach((m) => m.remove());
+    stopMarkersRef.current = [];
+    (stops?.features || []).slice(0, 1500).forEach((f) => {
+      const props = f.properties || {};
+      const [lng, lat] = f.geometry?.coordinates || [];
+      if (typeof lng !== "number") return;
+      const el = createStopMarker(props);
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        stopPopup(props).setLngLat([lng, lat]).addTo(map);
+      });
+      stopMarkersRef.current.push(new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map));
+    });
+  }, [stops]);
 
   // Obrys klikniętego budynku
   useEffect(() => {

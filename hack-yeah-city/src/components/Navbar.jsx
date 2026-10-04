@@ -34,6 +34,15 @@ function Navbar({ theme, onToggleTheme }) {
         >
           Mapa
         </NavLink>
+
+        <NavLink
+          to="/dane"
+          className={({ isActive }) =>
+            isActive ? "nav-link active" : "nav-link"
+          }
+        >
+          O danych
+        </NavLink>
       </div>
       <button
         type="button"

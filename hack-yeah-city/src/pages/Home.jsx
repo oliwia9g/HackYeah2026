@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Tile from "../components/Tile";
 import { saveGroupOnly } from "../prefs";
+import { setAutoRead, speak } from "../speech";
 import "../Home.css";
 
 const profiles = [
@@ -55,14 +56,26 @@ export default function Home() {
 
     // zapamiętujemy grupę na urządzeniu; szczegółowe ustawienia wracają do domyślnych tej grupy
     saveGroupOnly(profileId);
+
+    // wybór profilu osoby niewidomej włącza czytanie wszystkiego na każdej stronie (można wyciszyć przyciskiem w rogu)
+    const blind = profileId === "niewidomy_slabowidzacy";
+    setAutoRead(blind);
+    const title = profiles.find((p) => p.id === profileId)?.title || "";
+    // lekkie opóźnienie, żeby czytnik elementów (fokus na kafelku) nie przerwał potwierdzenia
+    setTimeout(
+      () =>
+        speak(
+          blind
+            ? `Wybrano: ${title}. Od teraz czytam na głos wszystko na każdej stronie. Możesz to wyciszyć przyciskiem w prawym dolnym rogu.`
+            : `Wybrano: ${title}.`,
+          { auto: true }
+        ),
+      400
+    );
   };
 
   const handleGoToMap = () => {
-    if (!selectedProfile) {
-      alert("Najpierw wybierz profil użytkownika.");
-      return;
-    }
-
+    // wybór profilu jest tylko skrótem; do mapy można przejść bez niego
     navigate("/mappage");
   };
 
@@ -79,7 +92,7 @@ export default function Home() {
           </p>
         </section>
 
-        <p className="subtitle">Wybierz profil, aby dopasować trasę do Twoich potrzeb.</p>
+        <p className="subtitle">Dotknij kafelka, który najlepiej opisuje Twoje potrzeby, a ustawienia trasy dobierzemy za Ciebie. Możesz też pominąć ten krok i od razu przejść do planowania trasy.</p>
 
         <div className="tiles">
           {profiles.map((profile) => (
@@ -105,7 +118,6 @@ export default function Home() {
             type="button"
             className="primary-button"
             onClick={handleGoToMap}
-            disabled={!selectedProfile}
           >
             Przejdź do planowania trasy
           </button>

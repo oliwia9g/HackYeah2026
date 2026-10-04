@@ -79,17 +79,21 @@ export function saveUser(data) {
   return safeSet(USER_KEY, JSON.stringify(data));
 }
 
-// --- wygląd (tryb standardowy / prosty / skupienia) ---
+// --- wygląd (tryb standardowy / prosty) ---
 export const UI_DEFAULT = { mode: "standard", font_scale: 1, contrast: "normalny", voice_replies: false };
+
+export const FONT_SCALES = [1, 1.25, 1.5, 1.75];
 
 export function loadUi() {
   const raw = safeGet(UI_KEY);
   if (!raw) return { ...UI_DEFAULT };
   try {
     const parsed = JSON.parse(raw);
+    const scale = Number(parsed.font_scale) || 1;
     return {
-      mode: ["standard", "prosty", "skupienie"].includes(parsed.mode) ? parsed.mode : "standard",
-      font_scale: Math.min(2, Math.max(1, Number(parsed.font_scale) || 1)),
+      // dawny tryb "skupienie" został usunięty: zapisany wybór zamieniamy na prosty
+      mode: parsed.mode === "standard" ? "standard" : parsed.mode ? "prosty" : "standard",
+      font_scale: FONT_SCALES.reduce((best, f) => (Math.abs(f - scale) < Math.abs(best - scale) ? f : best), 1),
       contrast: parsed.contrast === "wysoki" ? "wysoki" : "normalny",
       voice_replies: Boolean(parsed.voice_replies),
     };

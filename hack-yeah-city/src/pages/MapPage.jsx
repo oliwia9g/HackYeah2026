@@ -1,19 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Icon from "../components/Icons";
 import { Link } from "react-router-dom";
 import Map from "../components/Map";
 import RouteForm from "../components/RouteForm";
 import RoutePanel from "../components/RoutePanel";
 import PlacePanel from "../components/PlacePanel";
 import Assistant from "../components/Assistant";
+import TransitPanel from "../components/TransitPanel";
+import { L, hours, km } from "../format";
 import { API, api, getPosition } from "../api";
-import { loadUi, resolveRequirements, saveUi } from "../prefs";
-import { canSpeak, createRecognition, speak, stopSpeaking } from "../speech";
+import { FONT_SCALES, loadUi, resolveRequirements, saveUi } from "../prefs";
+import { canSpeak, createRecognition, setAutoRead, speak, stopSpeaking, useSpeechState } from "../speech";
 import "../kbb.css";
+
+const GROUP_ICON = {
+  wozek_inwalidzki: "/disabled.png",
+  wozek_dziecko: "/little-kid.png",
+  niewidomy_slabowidzacy: "/eye.png",
+  gluchy_niedoslyszacy: "/ear.png",
+  senior: "/old-man.png",
+  ciaza: "/pregnant.png",
+};
 
 const MODES = [
   ["standard", "Standardowy"],
   ["prosty", "Prosty"],
-  ["skupienie", "Skupienie"],
 ];
 
 const NEAREST_QUICK = ["toaleta", "lawka", "winda", "apteka"];
@@ -45,9 +56,10 @@ export default function MapPage({ theme }) {
   const [area, setArea] = useState(undefined);
   const [meta, setMeta] = useState(null);
   const [health, setHealth] = useState(null);
-  const [surveys, setSurveys] = useState(null);
   const [observations, setObservations] = useState(null);
   const [showObs, setShowObs] = useState(false);
+  const [showStops, setShowStops] = useState(true);
+  const [stopsData, setStopsData] = useState(null); // null = jeszcze nie wiadomo, false = serwer nie ma rozkładu
 
   const [points, setPoints] = useState({ pointA: null, pointB: null });
   const [addresses, setAddresses] = useState({ from: "", to: "" });
@@ -65,6 +77,8 @@ export default function MapPage({ theme }) {
   const [infoClick, setInfoClick] = useState(null);
   const [nearestRes, setNearestRes] = useState(null);
   const [where, setWhere] = useState(null);
+  const [transit, setTransit] = useState(null);
+  const [transitBusy, setTransitBusy] = useState(false);
   const [posSource, setPosSource] = useState("gps");
   const [showMap, setShowMap] = useState(() => loadUi().mode === "standard");
 
@@ -75,7 +89,10 @@ export default function MapPage({ theme }) {
   const isDark = theme === "dark";
   const mode = ui.mode;
   const simpleLike = mode !== "standard";
-  const reduceMotion = mode === "skupienie";
+  // animacje wyłączamy tylko wtedy, gdy system tego chce
+  const reduceMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const { autoRead, muted } = useSpeechState();
+  const voiceOn = autoRead && !muted;
 
   // --- wczytanie danych pomocniczych ---
   useEffect(() => {
@@ -88,7 +105,7 @@ export default function MapPage({ theme }) {
     api.area().then(setArea).catch(() => setArea(null));
     api.meta().then(setMeta).catch(() => {});
     api.health().then(setHealth).catch(() => {});
-    api.surveys().then(setSurveys).catch(() => {});
+    api.transitStops().then(setStopsData).catch(() => setStopsData(false));
   }, []);
 
   useEffect(() => {
@@ -100,6 +117,11 @@ export default function MapPage({ theme }) {
     saveUi(ui);
   }, [ui]);
 
+  // dawny zapis „czytaj odpowiedzi na głos” włącza globalne czytanie
+  useEffect(() => {
+    if (loadUi().voice_replies) setAutoRead(true);
+  }, []);
+
   useEffect(() => {
     if (showMap) setTimeout(() => mapRef.current?.resize(), 50);
   }, [showMap, mode]);
@@ -107,7 +129,6 @@ export default function MapPage({ theme }) {
   const changeMode = (next) => {
     setUi((u) => ({ ...u, mode: next }));
     setShowMap(next === "standard");
-    setStepIndex(0);
     setAnnounce(`Wygląd: ${MODES.find((m) => m[0] === next)[1]}`);
   };
 
@@ -118,9 +139,9 @@ export default function MapPage({ theme }) {
       setReply(text);
       setAnnounce(text);
       lastSpokenRef.current = text;
-      if (force || ui.voice_replies) speak(text);
+      if (force || voiceOn) speak(text, { auto: true });
     },
-    [ui.voice_replies]
+    [voiceOn]
   );
 
   const readAloud = (text) => {
@@ -132,10 +153,12 @@ export default function MapPage({ theme }) {
   const setOk = (text) => {
     setStatus({ text, kind: "info" });
     setAnnounce(text);
+    if (autoRead) speak(text, { auto: true });
   };
   const setErr = (text) => {
     setStatus({ text, kind: "error" });
     setAnnounce(text);
+    if (autoRead) speak(text, { auto: true });
   };
 
   // --- wymagania (profil + preferencje) ---
@@ -179,9 +202,10 @@ export default function MapPage({ theme }) {
         setPoints({ pointA: a, pointB: b });
       }
       const best = data.routes[recommendedIndex].properties;
-      setOk(`Znaleziono ${data.routes.length} ${data.routes.length === 1 ? "wariant" : "warianty"} trasy. Polecana: ${best.length_m} m, około ${Math.round(best.time_min)} min.`);
-      if (ui.voice_replies) speak(best.spoken_summary);
-      lastSpokenRef.current = best.spoken_summary;
+      setOk(`Znaleziono ${data.routes.length} ${data.routes.length === 1 ? "wariant" : "warianty"} trasy. Polecana: ${km(best.length_m)}, około ${hours(best.time_min)}.`);
+      const summary = L(best.spoken_summary);
+      if (voiceOn) speak(summary, { auto: true });
+      lastSpokenRef.current = summary;
       return data;
     } catch (err) {
       setResp(null);
@@ -248,6 +272,7 @@ export default function MapPage({ theme }) {
     setInfo(null);
     setNearestRes(null);
     setWhere(null);
+    setTransit(null);
     setClearVersion((v) => v + 1);
     setStatus({ text: "", kind: "info" });
     stopSpeaking();
@@ -271,7 +296,7 @@ export default function MapPage({ theme }) {
       setPoints({ pointA: a, pointB: points.pointB });
       setAddresses((old) => ({ ...old, from: "" }));
       setResp(null);
-      if (pos.accuracy_m > 50) setOk(`Lokalizacja jest niedokładna (około ${pos.accuracy_m} m). Ustawiono punkt A.`);
+      if (pos.accuracy_m > 50) setOk(`Lokalizacja jest niedokładna (około ${km(pos.accuracy_m)}). Ustawiono punkt A.`);
       else setOk("Punkt A ustawiony na Twoją lokalizację.");
       mapRef.current?.flyTo(pos.lon, pos.lat, 16);
     } catch (err) {
@@ -289,9 +314,9 @@ export default function MapPage({ theme }) {
       setInfo(data);
       setNearestRes(null);
       setWhere(null);
-      setOk(data.text || "Sprawdzono miejsce.");
-      lastSpokenRef.current = data.spoken || data.text || "";
-      if (ui.voice_replies && data.spoken) speak(data.spoken);
+      setOk(L(data.text) || "Sprawdzono miejsce.");
+      lastSpokenRef.current = L(data.spoken || data.text || "");
+      if (voiceOn && data.spoken) speak(L(data.spoken), { auto: true });
     } catch (err) {
       setInfo(null);
       setErr(err.message);
@@ -343,7 +368,7 @@ export default function MapPage({ theme }) {
       setNearestRes({ ...data, origin: pos });
       setInfo(null);
       setWhere(null);
-      const text = data.spoken || data.note || "Nie znaleziono takiego miejsca w pobliżu.";
+      const text = L(data.spoken || data.note || "Nie znaleziono takiego miejsca w pobliżu.");
       setOk(text);
       say(text, { force: routeToFirst });
       mapRef.current?.flyTo(pos.lon, pos.lat, 16);
@@ -365,13 +390,91 @@ export default function MapPage({ theme }) {
       setWhere({ ...data, pos });
       setNearestRes(null);
       setInfo(null);
-      say(data.spoken || data.text);
-      setOk(data.text);
+      say(L(data.spoken || data.text));
+      setOk(L(data.text));
       mapRef.current?.flyTo(pos.lon, pos.lat, 17);
     } catch (err) {
       setErr(err.message);
       say(err.message);
     }
+  };
+
+  // --- komunikacja: przystanki w pobliżu i plan przejazdu ---
+  const transitProblem = (err) =>
+    err.status === 503
+      ? {
+          kind: "unavailable",
+          message:
+            "Ten serwer nie ma teraz rozkładu jazdy ZTP, więc nie pokazujemy przystanków ani przejazdów. Trasy piesze działają normalnie. Przystanki pojawią się, gdy serwer pobierze rozkład.",
+        }
+      : { kind: "error", message: err.message };
+
+  const runTransitNearby = async ({ force = false } = {}) => {
+    setTransitBusy(true);
+    setTransit(null);
+    try {
+      const pos = await getOrigin();
+      const q = currentQuery();
+      const data = await api.transitNearby({ lon: pos.lon, lat: pos.lat, radius: 500, n: 4, only_accessible: false, profiles: q.profiles });
+      setTransit({ kind: "nearby", data, origin: pos });
+      mapRef.current?.flyTo(pos.lon, pos.lat, 16);
+      const first = data.stops?.[0];
+      say(
+        first
+          ? `Najbliższy przystanek: ${first.name}, ${km(first.distance_m)} stąd. Dostępności przystanku nie ma w danych.`
+          : "Nie znaleziono przystanków w pobliżu.",
+        { force }
+      );
+    } catch (err) {
+      const t = transitProblem(err);
+      setTransit(t);
+      say(t.message, { force });
+    } finally {
+      setTransitBusy(false);
+    }
+  };
+
+  const endpointSpecs = () => {
+    const fromSpec = addresses.from.trim()
+      ? { from_q: addresses.from.trim() }
+      : points.pointA
+      ? { from_lon: points.pointA.lng, from_lat: points.pointA.lat }
+      : null;
+    const toSpec = addresses.to.trim()
+      ? { to_q: addresses.to.trim() }
+      : points.pointB
+      ? { to_lon: points.pointB.lng, to_lat: points.pointB.lat }
+      : null;
+    return fromSpec && toSpec ? { ...fromSpec, ...toSpec } : null;
+  };
+
+  const runTransitPlan = async () => {
+    const spec = endpointSpecs();
+    if (!spec) {
+      setErr("Podaj początek i cel: wpisz adresy albo kliknij dwa punkty na mapie.");
+      return;
+    }
+    setTransitBusy(true);
+    setTransit(null);
+    try {
+      const q = currentQuery();
+      const data = await api.plan({ ...spec, profiles: q.profiles, prefs: q.prefs });
+      setTransit({ kind: "plan", data });
+      const first = data.options?.[0];
+      say(first ? L(first.summary) : "Nie znaleziono przejazdu komunikacją. Trasa piesza jest dostępna.");
+    } catch (err) {
+      const t = transitProblem(err);
+      setTransit(t);
+      say(t.message);
+    } finally {
+      setTransitBusy(false);
+    }
+  };
+
+  const focusStop = (s) => mapRef.current?.flyTo(s.lon, s.lat, 18);
+  const focusOption = (o) => {
+    const a = o.ride?.board_stop;
+    if (a) mapRef.current?.flyTo(a.lon, a.lat, 17);
   };
 
   // --- asystent głosowy (GET /api/voice/command) ---
@@ -403,7 +506,7 @@ export default function MapPage({ theme }) {
     const data = await runRoutes(p);
     if (data) {
       const best = data.routes.find((r) => r.properties.id === data.recommended) || data.routes[0];
-      say(`${best.properties.spoken_summary} Powiedz: dalej, powtórz, przeszkody albo stop.`, { force: true });
+      say(`${L(best.properties.spoken_summary)} Powiedz: dalej, powtórz, przeszkody albo stop.`, { force: true });
     }
   };
 
@@ -422,7 +525,7 @@ export default function MapPage({ theme }) {
         if (!steps.length) return say("Nie mam teraz trasy. Powiedz, dokąd chcesz iść.");
         const next = Math.min(stepIndex + 1, steps.length - 1);
         setStepIndex(next);
-        say(steps[next].text, { force: true });
+        say(L(steps[next].text), { force: true });
         break;
       }
       case "list_hazards": {
@@ -430,7 +533,7 @@ export default function MapPage({ theme }) {
         if (!route) return say("Nie mam teraz trasy.");
         say(
           list.length
-            ? list.map((h) => `Po ${h.at_m} metrach: ${h.spoken || h.text}.`).join(" ")
+            ? list.map((h) => `Po ${km(h.at_m)}: ${L(h.spoken || h.text)}.`).join(" ")
             : "Na tej trasie nie mamy zapisanych przeszkód. To nie jest gwarancja, że ich nie ma.",
           { force: true }
         );
@@ -439,7 +542,7 @@ export default function MapPage({ theme }) {
       case "remaining":
         say(
           route
-            ? `Cała trasa ma około ${route.length_m} metrów. Liczenie, ile zostało, wymaga śledzenia pozycji, którego jeszcze nie mamy.`
+            ? `Cała trasa ma około ${km(route.length_m)}. Liczenie, ile zostało, wymaga śledzenia pozycji, którego jeszcze nie mamy.`
             : "Nie mam teraz trasy.",
           { force: true }
         );
@@ -487,14 +590,14 @@ export default function MapPage({ theme }) {
             label: `ustawione głosem: ${r.set.profiles || "własne preferencje"}`,
           };
           setOverride(overrideRef.current);
-          say(r.reply, { force });
+          say(L(r.reply), { force });
           break;
         case "clarify":
           clarifyRef.current = r;
-          say(r.reply, { force });
+          say(L(r.reply), { force });
           break;
         case "route":
-          say(r.reply, { force });
+          say(L(r.reply), { force });
           await completeRouteFromVoice({ ...r.call.params });
           break;
         case "nearest":
@@ -504,10 +607,10 @@ export default function MapPage({ theme }) {
           await runWhereAmI();
           break;
         case "transit_nearby":
-          say("Przystanki w pobliżu jeszcze nie są dostępne w tym widoku.", { force });
+          await runTransitNearby({ force });
           break;
         default:
-          say(r.reply, { force });
+          say(L(r.reply), { force });
       }
     } catch (err) {
       say(err.message);
@@ -562,11 +665,41 @@ export default function MapPage({ theme }) {
           lon: r.lon,
           lat: r.lat,
           label: String(i + 1),
-          aria: `${i + 1}. ${r.name}, ${r.walk_m} metrów chodnikami`,
+          aria: `${i + 1}. ${r.name}, ${km(r.walk_m)} chodnikami`,
           title: `${i + 1}. ${r.name}`,
           result: r,
         })
       );
+    }
+    if (transit?.kind === "nearby") {
+      (transit.data.stops || []).forEach((st, i) =>
+        list.push({
+          key: `stop-${st.id}`,
+          kind: "stop",
+          lon: st.lon,
+          lat: st.lat,
+          label: String(i + 1),
+          aria: `Przystanek ${i + 1}: ${st.name}, ${km(st.distance_m)}`,
+          title: `Przystanek ${st.name}`,
+        })
+      );
+    }
+    if (transit?.kind === "plan") {
+      (transit.data.options || []).slice(0, 3).forEach((o, i) => {
+        [["board", o.ride?.board_stop, "Wsiadasz"], ["alight", o.ride?.alight_stop, "Wysiadasz"]].forEach(([k, st, word]) => {
+          if (st) {
+            list.push({
+              key: `plan-${i}-${k}`,
+              kind: "stop",
+              lon: st.lon,
+              lat: st.lat,
+              label: k === "board" ? "W" : "Z",
+              aria: `${word} na przystanku ${st.name} (przejazd ${i + 1})`,
+              title: `${word}: ${st.name}`,
+            });
+          }
+        });
+      });
     }
     if (where?.pos) {
       list.push({
@@ -580,7 +713,7 @@ export default function MapPage({ theme }) {
       });
     }
     return list;
-  }, [info, infoClick, nearestRes, where]);
+  }, [info, infoClick, nearestRes, where, transit]);
 
   const handlePinClick = (pin) => {
     if (pin.result) openPlaceAt(pin.result);
@@ -605,6 +738,9 @@ export default function MapPage({ theme }) {
     : NEAREST_QUICK;
 
   // --- widok ---
+  const fontIndex = Math.max(0, FONT_SCALES.indexOf(ui.font_scale));
+  const groupIcon = req?.group ? GROUP_ICON[req.group] : null;
+
   return (
     <div
       className="kbb"
@@ -615,55 +751,65 @@ export default function MapPage({ theme }) {
       style={{ "--font-scale": ui.font_scale }}
     >
       <div className="kbb-wrap">
-        <header>
-          <h1>Kraków bez barier</h1>
-          <p className="kbb-muted" style={{ marginTop: 0 }}>
-            Mapa, która mówi, czego jeszcze nie wie. Brak danych nigdy nie oznacza „dostępne”.
-          </p>
-        </header>
+        <header className="kbb-header">
+          <div>
+            <p className="eyebrow">Kraków Bez Barier</p>
+            <h1>Zaplanuj trasę</h1>
+            <p className="kbb-muted kbb-lead">
+              Mapa, która mówi, czego jeszcze nie wie. Brak danych nigdy nie oznacza „dostępne”.
+            </p>
+          </div>
 
-        {/* Wygląd */}
-        <section className="kbb-card" aria-labelledby="look-heading">
-          <h2 id="look-heading" className="sr-only">Wygląd</h2>
-          <div className="kbb-toolbar" role="group" aria-label="Wygląd strony">
-            <span style={{ fontWeight: 700 }}>Wygląd:</span>
-            {MODES.map(([key, label]) => (
-              <button key={key} type="button" className="kbb-btn" aria-pressed={mode === key} onClick={() => changeMode(key)}>
-                {label}
-              </button>
-            ))}
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              Wielkość liter
-              <input
-                type="range"
-                min="1"
-                max="2"
-                step="0.1"
-                value={ui.font_scale}
-                onChange={(e) => setUi((u) => ({ ...u, font_scale: Number(e.target.value) }))}
-                aria-valuetext={`${Math.round(ui.font_scale * 100)} procent`}
-              />
-            </label>
-            <button
-              type="button"
-              className="kbb-btn"
-              aria-pressed={ui.contrast === "wysoki"}
-              onClick={() => setUi((u) => ({ ...u, contrast: u.contrast === "wysoki" ? "normalny" : "wysoki" }))}
-            >
-              Wysoki kontrast
-            </button>
-            {canSpeak && (
+          <section className="kbb-look" aria-labelledby="look-heading">
+            <h2 id="look-heading" className="kbb-look-title">Wygląd strony</h2>
+            <div className="kbb-toolbar" role="group" aria-label="Tryb wyglądu">
+              {MODES.map(([key, label]) => (
+                <button key={key} type="button" className="kbb-btn" aria-pressed={mode === key} onClick={() => changeMode(key)}>
+                  {label}
+                </button>
+              ))}
               <button
                 type="button"
                 className="kbb-btn"
-                aria-pressed={ui.voice_replies}
-                onClick={() => setUi((u) => ({ ...u, voice_replies: !u.voice_replies }))}
+                aria-pressed={ui.contrast === "wysoki"}
+                onClick={() => setUi((u) => ({ ...u, contrast: u.contrast === "wysoki" ? "normalny" : "wysoki" }))}
               >
-                Czytaj odpowiedzi na głos
+                Wysoki kontrast
               </button>
-            )}
-          </div>
-        </section>
+              {canSpeak && (
+                <button
+                  type="button"
+                  className="kbb-btn"
+                  aria-pressed={autoRead}
+                  onClick={() => {
+                    setAutoRead(!autoRead);
+                    setUi((u) => ({ ...u, voice_replies: !autoRead }));
+                  }}
+                >
+                  <Icon name="speaker" /> Czytaj wszystko na głos
+                </button>
+              )}
+            </div>
+            <div className="kbb-fontbox">
+              <label htmlFor="font-scale">
+                Wielkość liter: <strong>{Math.round(ui.font_scale * 100)}%</strong>
+              </label>
+              <input
+                id="font-scale"
+                type="range"
+                min="0"
+                max="3"
+                step="1"
+                value={fontIndex}
+                onChange={(e) => setUi((u) => ({ ...u, font_scale: FONT_SCALES[Number(e.target.value)] }))}
+                aria-valuetext={`${Math.round(ui.font_scale * 100)} procent`}
+              />
+              <div className="kbb-ticks" aria-hidden="true">
+                <span>100%</span><span>125%</span><span>150%</span><span>175%</span>
+              </div>
+            </div>
+          </section>
+        </header>
 
         {/* Stan systemu */}
         {health?.status === "czesciowo" && (
@@ -678,40 +824,34 @@ export default function MapPage({ theme }) {
           </div>
         )}
 
-        <div className="kbb-layout" style={simpleLike && !showMap ? { gridTemplateColumns: "1fr" } : undefined}>
+        <div className="kbb-layout" style={simpleLike && !showMap ? { gridTemplateColumns: "1fr", maxWidth: 760, margin: "0 auto" } : undefined}>
           <div className="kbb-side">
-            {/* Wymagania */}
-            <section className="kbb-card" aria-labelledby="req-heading">
-              <h2 id="req-heading">Twoje wymagania</h2>
-              <p style={{ marginTop: 0 }}>{requirementLabel || (reqError ? "Nie udało się ustalić." : "Ładowanie…")}</p>
-              <Link className="kbb-btn" to="/profil">Zmień wymagania</Link>
-              {req?.group === null && !override && (
-                <p className="kbb-small kbb-muted">Nie wybrano żadnej grupy, więc trasa nie omija żadnych barier.</p>
-              )}
-            </section>
-
-            {/* Kafelki w trybach prostym i skupienia */}
+            {/* Kafelki w trybie prostym */}
             {simpleLike && (
               <section className="kbb-card" aria-labelledby="tiles-heading">
                 <h2 id="tiles-heading">Co chcesz zrobić?</h2>
                 <div className="kbb-tiles">
                   <button type="button" className="kbb-tile" onClick={() => document.getElementById("from")?.focus()}>
-                    <span className="kbb-tile-ico" aria-hidden="true">🧭</span>Dokąd idę?
+                    <Icon name="walk" className="kbb-tile-svg" />Dokąd idę?
                   </button>
                   <button type="button" className="kbb-tile" onClick={() => runNearest("toaleta")}>
-                    <span className="kbb-tile-ico" aria-hidden="true">🚻</span>Najbliższa toaleta
+                    <Icon name="wc" className="kbb-tile-svg" />Najbliższa toaleta
                   </button>
                   <button type="button" className="kbb-tile" onClick={() => runNearest("lawka")}>
-                    <span className="kbb-tile-ico" aria-hidden="true">🪑</span>Najbliższa ławka
+                    <Icon name="bench" className="kbb-tile-svg" />Najbliższa ławka
                   </button>
                   <button type="button" className="kbb-tile" onClick={runWhereAmI}>
-                    <span className="kbb-tile-ico" aria-hidden="true">📍</span>Gdzie jestem?
+                    <Icon name="here" className="kbb-tile-svg" />Gdzie jestem?
                   </button>
                   <button type="button" className="kbb-tile" onClick={micSupported ? startListening : focusAssistant}>
-                    <span className="kbb-tile-ico" aria-hidden="true">🎤</span>Powiedz, czego szukasz
+                    <Icon name="mic" className="kbb-tile-svg" />Powiedz, czego szukasz
                   </button>
+                  <Link className="kbb-tile" to="/">
+                    {groupIcon ? <img className="kbb-tile-img" src={groupIcon} alt="" /> : <Icon name="person" className="kbb-tile-svg" />}
+                    Mój profil
+                  </Link>
                   <button type="button" className="kbb-tile" onClick={() => setShowMap((v) => !v)} aria-pressed={showMap}>
-                    <span className="kbb-tile-ico" aria-hidden="true">🗺️</span>{showMap ? "Ukryj mapę" : "Pokaż mapę"}
+                    <Icon name="map" className="kbb-tile-svg" />{showMap ? "Ukryj mapę" : "Pokaż mapę"}
                   </button>
                 </div>
               </section>
@@ -720,6 +860,18 @@ export default function MapPage({ theme }) {
             {/* Skąd / dokąd */}
             <section className="kbb-card" aria-labelledby="form-heading">
               <h2 id="form-heading">Dokąd idziesz?</h2>
+              <div className="kbb-req">
+                {groupIcon && <img className="kbb-req-img" src={groupIcon} alt="" />}
+                <p>
+                  <span className="kbb-small kbb-muted">Twoje wymagania</span>
+                  <br />
+                  <strong>{requirementLabel || (reqError ? "Nie udało się ustalić." : "Ładowanie…")}</strong>
+                </p>
+                <Link className="kbb-btn" to="/profil">Zmień</Link>
+              </div>
+              {req?.group === null && !override && (
+                <p className="kbb-small kbb-muted">Nie wybrano żadnych wymagań, więc trasa nie omija żadnych barier.</p>
+              )}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -731,7 +883,7 @@ export default function MapPage({ theme }) {
                   <button type="submit" className="kbb-btn kbb-btn-primary" disabled={!isReady || loading}>
                     {loading ? "Wyznaczanie trasy…" : "Wyznacz trasę"}
                   </button>
-                  <button type="button" className="kbb-btn" onClick={useMyLocationAsStart}>📍 Moja lokalizacja jako A</button>
+                  <button type="button" className="kbb-btn" onClick={useMyLocationAsStart}><Icon name="here" /> Moja lokalizacja jako A</button>
                   <button type="button" className="kbb-btn" onClick={clearAll}>Wyczyść</button>
                 </div>
               </form>
@@ -759,8 +911,6 @@ export default function MapPage({ theme }) {
                 setStepIndex(0);
               }}
               mode={mode}
-              stepIndex={stepIndex}
-              setStepIndex={setStepIndex}
               onSpeak={readAloud}
             />
 
@@ -785,7 +935,7 @@ export default function MapPage({ theme }) {
                   Moja lokalizacja
                 </button>
                 <button type="button" className="kbb-btn" aria-pressed={posSource === "A"} onClick={() => setPosSource("A")}>
-                  Punkt A (symulacja)
+                  Punkt A
                 </button>
               </div>
               <div className="kbb-toolbar">
@@ -794,7 +944,7 @@ export default function MapPage({ theme }) {
                     {kinds[k] || k}
                   </button>
                 ))}
-                <button type="button" className="kbb-btn" onClick={runWhereAmI}>📍 Gdzie jestem?</button>
+                <button type="button" className="kbb-btn" onClick={runWhereAmI}><Icon name="here" /> Gdzie jestem?</button>
               </div>
               <p className="kbb-small kbb-muted">
                 Zgodę na lokalizację przeglądarka zapyta dopiero po kliknięciu. Pozycji nigdzie nie zapisujemy.
@@ -802,14 +952,14 @@ export default function MapPage({ theme }) {
 
               {where && (
                 <div className="kbb-banner kbb-banner-info" role="status">
-                  <p style={{ margin: 0, fontSize: "1.15em" }}>{where.text}</p>
-                  {where.accuracy_m > 50 && <p className="kbb-small">Lokalizacja jest niedokładna (około {where.accuracy_m} m).</p>}
-                  {where.pos?.simulated && <p className="kbb-small">To pozycja symulowana (punkt A), nie GPS.</p>}
+                  <p style={{ margin: 0, fontSize: "1.15em" }}>{L(where.text)}</p>
+                  {where.accuracy_m > 50 && <p className="kbb-small">Lokalizacja jest niedokładna (około {km(where.accuracy_m)}).</p>}
+                  {where.pos?.simulated && <p className="kbb-small">To pozycja z punktu A na mapie, nie z GPS.</p>}
                   {where.nearby?.length > 0 && (
                     <ul className="kbb-list" style={{ marginTop: 8 }}>
                       {where.nearby.map((n) => (
                         <li key={n.id}>
-                          {n.name} · {n.distance_m} m
+                          {n.name} · {km(n.distance_m)}
                         </li>
                       ))}
                     </ul>
@@ -828,8 +978,8 @@ export default function MapPage({ theme }) {
                           <span style={{ flex: 1 }}>
                             <strong>{r.name}</strong>
                             <br />
-                            {r.walk_m} m chodnikami (około {Math.round(r.walk_min)} min)
-                            <span className="kbb-small kbb-muted"> · w linii prostej: {r.straight_m} m</span>
+                            {km(r.walk_m)} chodnikami (około {hours(r.walk_min)})
+                            <span className="kbb-small kbb-muted"> · w linii prostej: {km(r.straight_m)}</span>
                             <br />
                             <span className="kbb-small">
                               Dostępność: {r.wheelchair?.value_text || "brak danych"} ({ACC_WORD[r.wheelchair?.status] || r.wheelchair?.status || "brak danych"}
@@ -855,6 +1005,16 @@ export default function MapPage({ theme }) {
               )}
             </section>
 
+            <TransitPanel
+              transit={transit}
+              busy={transitBusy}
+              canPlan={Boolean(endpointSpecs())}
+              onNearby={() => runTransitNearby()}
+              onPlan={runTransitPlan}
+              onFocusStop={focusStop}
+              onFocusOption={focusOption}
+            />
+
             <div ref={assistantInputRef}>
               <Assistant
                 onSubmit={(t) => handleUtterance(t)}
@@ -867,50 +1027,10 @@ export default function MapPage({ theme }) {
                 big={simpleLike}
               />
             </div>
-
-            {/* Świeżość danych i źródła */}
-            <section className="kbb-card" aria-labelledby="data-heading">
-              <h2 id="data-heading">O danych</h2>
-              {surveys?.last ? (
-                <>
-                  <p>
-                    <strong>Ostatni nalot:</strong> {surveys.last.text}
-                    {surveys.last.has_survey && (
-                      <> {surveys.last.fresh ? "✓ świeże" : "! dane z okolicy mogą być nieaktualne"}</>
-                    )}
-                  </p>
-                  {surveys.last.has_survey && (
-                    <>
-                      {surveys.last.covers?.length > 0 && <p className="kbb-small">Nalot obejmuje: {surveys.last.covers.join(", ")}.</p>}
-                      {surveys.last.does_not_cover?.length > 0 && (
-                        <p className="kbb-small">Nalot NIE obejmuje: {surveys.last.does_not_cover.join(", ")}.</p>
-                      )}
-                    </>
-                  )}
-                  {surveys.note && <p className="kbb-small kbb-muted">{surveys.note}</p>}
-                  <label style={{ display: "inline-flex", gap: 8, alignItems: "center", minHeight: 44 }}>
-                    <input type="checkbox" checked={showObs} onChange={(e) => setShowObs(e.target.checked)} />
-                    Pokaż na mapie obserwacje z nalotu
-                  </label>
-                </>
-              ) : (
-                <p className="kbb-muted">Informacja o nalotach niedostępna.</p>
-              )}
-              <ul className="kbb-small kbb-muted" style={{ paddingLeft: 18 }}>
-                {(meta?.atrybucja || ["Dane mapy i obiektów: © OpenStreetMap contributors, licencja ODbL"]).map((a) => (
-                  <li key={a}>{a}</li>
-                ))}
-              </ul>
-              <p className="kbb-small">
-                <a href={`${API}/api/sources`} target="_blank" rel="noreferrer">Rejestr źródeł danych</a>
-                {" · "}
-                <a href={`${API}/docs`} target="_blank" rel="noreferrer">API</a>
-              </p>
-            </section>
           </div>
 
-          <div style={simpleLike && !showMap ? { display: "none" } : undefined}>
-            <div className="kbb-toolbar" role="group" aria-label="Co robi klik na mapie">
+          <div className="kbb-mapcol" style={simpleLike && !showMap ? { display: "none" } : undefined}>
+            <div className="kbb-toolbar" role="group" aria-label="Mapa: tryb kliknięcia i warstwy">
               <span className="kbb-small">Klik na mapie:</span>
               <button type="button" className="kbb-btn" aria-pressed={clickMode === "route"} onClick={() => setClickMode("route")}>
                 Ustawia trasę (A, potem B)
@@ -918,6 +1038,15 @@ export default function MapPage({ theme }) {
               <button type="button" className="kbb-btn" aria-pressed={clickMode === "info"} onClick={() => setClickMode("info")}>
                 Sprawdza miejsce / budynek
               </button>
+              <label className="kbb-check">
+                <input type="checkbox" checked={showObs} onChange={(e) => setShowObs(e.target.checked)} />
+                Obserwacje z nalotu
+              </label>
+              <label className="kbb-check">
+                <input type="checkbox" checked={showStops} onChange={(e) => setShowStops(e.target.checked)} disabled={stopsData === false} />
+                Przystanki
+              </label>
+              <Link className="kbb-btn-link" to="/dane">Źródła i aktualność danych</Link>
             </div>
             <div className="kbb-mapbox">
               <Map
@@ -931,6 +1060,7 @@ export default function MapPage({ theme }) {
                 footprint={info?.building?.footprint || null}
                 observations={observations}
                 showObservations={showObs}
+                stops={showStops && stopsData ? stopsData : null}
                 area={area}
                 theme={theme}
                 clickMode={clickMode}
@@ -940,7 +1070,15 @@ export default function MapPage({ theme }) {
                 reduceMotion={reduceMotion}
               />
             </div>
-            <p className="kbb-small kbb-muted">
+            <ul className="kbb-legend" aria-label="Legenda mapy">
+              <li><span className="kbb-legend-area" aria-hidden="true" /> Jaśniejszy obszar z fioletowym obrysem to <strong>obszar demo</strong> (Kraków-Śródmieście), jedyny, dla którego mamy dane. Reszta jest przyciemniona.</li>
+              {stopsData ? (
+                <li><span className="kbb-stop kbb-stop-tram kbb-legend-stop" aria-hidden="true">T</span> przystanek tramwajowy <span className="kbb-stop kbb-stop-bus kbb-legend-stop" aria-hidden="true">A</span> przystanek autobusowy ({stopsData.count} w obszarze, z rozkładu ZTP)</li>
+              ) : stopsData === false ? (
+                <li>Przystanków nie pokazujemy: serwer nie ma teraz rozkładu jazdy ZTP.</li>
+              ) : null}
+            </ul>
+            <p className="kbb-small kbb-muted kbb-mapnote">
               Mapa jest dodatkiem: wszystko, co widać na niej, jest też w listach obok (kroki, zagrożenia, wyniki).
             </p>
           </div>

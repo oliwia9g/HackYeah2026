@@ -412,13 +412,18 @@ body {
 
 @media (max-width: 600px) {
   .navbar {
-    padding: 0 12px;
-    gap: 8px;
+    height: auto;
+    min-height: 56px;
+    padding: 6px 12px;
+    gap: 4px 8px;
+    flex-wrap: wrap;
   }
 
   .navbar-links {
     gap: 2px;
-    flex: 1;
+    flex: 1 1 100%;
+    order: 3;
+    flex-wrap: wrap;
     justify-content: center;
   }
 
