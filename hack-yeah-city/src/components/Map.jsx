@@ -386,6 +386,23 @@ function createStopMarker(props) {
   return el;
 }
 
+function createSignalMarker(props, active) {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.className = `kbb-signal${active ? " kbb-signal-active" : ""}${props.questioned ? " kbb-signal-questioned" : ""}`;
+  el.textContent = "!";
+  el.setAttribute("aria-label", `Zgłoszenie społeczności: ${props.category_label}. Otwórz szczegóły.`);
+  el.title = `${props.category_label} (niezweryfikowane)`;
+  return el;
+}
+
+function createDraftMarker() {
+  const el = document.createElement("div");
+  el.className = "kbb-signal-draft";
+  el.setAttribute("aria-hidden", "true");
+  return el;
+}
+
 function boundsOf(value) {
   const flat = [];
   const walk = (v) => {
@@ -406,7 +423,7 @@ const Map = forwardRef(function Map(
   {
     initialLng = 19.94,
     initialLat = 50.06,
-    initialZoom = 13,
+    initialZoom = 11,
     onPointsChange,
     points = EMPTY_POINTS,
     routes = EMPTY_LIST, // tablica Feature z /api/routes
@@ -424,6 +441,12 @@ const Map = forwardRef(function Map(
     onPinClick,
     clearSelectionVersion = 0,
     reduceMotion = false,
+    insets = null, // {top,left,right,bottom} w px: część mapy zasłonięta przez pływające panele
+    signals = null, // FeatureCollection zgłoszeń społeczności
+    activeSignalId = null,
+    onSignalClick,
+    onReportClick, // tryb "report": klik na mapie wskazuje miejsce zgłoszenia
+    draft = null, // {lng, lat} miejsce właśnie zgłaszane
   },
   ref
 ) {
@@ -434,9 +457,14 @@ const Map = forwardRef(function Map(
   const clearSelectionVersionRef = useRef(clearSelectionVersion);
   const onPointsChangeRef = useRef(onPointsChange);
   const onInfoClickRef = useRef(onInfoClick);
+  const onReportClickRef = useRef(onReportClick);
+  const onSignalClickRef = useRef(onSignalClick);
+  const signalMarkersRef = useRef([]);
+  const draftMarkerRef = useRef(null);
   const onPinClickRef = useRef(onPinClick);
   const clickModeRef = useRef(clickMode);
   const reduceMotionRef = useRef(reduceMotion);
+  const insetsRef = useRef(insets);
   const hazardMarkersRef = useRef([]);
   const pinMarkersRef = useRef([]);
   const stopMarkersRef = useRef([]);
@@ -445,10 +473,24 @@ const Map = forwardRef(function Map(
   useEffect(() => {
     onPointsChangeRef.current = onPointsChange;
     onInfoClickRef.current = onInfoClick;
+    onReportClickRef.current = onReportClick;
+    onSignalClickRef.current = onSignalClick;
     onPinClickRef.current = onPinClick;
     clickModeRef.current = clickMode;
     reduceMotionRef.current = reduceMotion;
-  }, [onPointsChange, onInfoClick, onPinClick, clickMode, reduceMotion]);
+    insetsRef.current = insets;
+  }, [onPointsChange, onInfoClick, onReportClick, onSignalClick, onPinClick, clickMode, reduceMotion, insets]);
+
+  // odstęp od krawędzi, żeby trasa nie chowała się pod pływającymi kartami
+  const pad = (base) => {
+    const i = insetsRef.current || {};
+    return {
+      top: base + (i.top || 0),
+      left: base + (i.left || 0),
+      right: base + (i.right || 0),
+      bottom: base + (i.bottom || 0),
+    };
+  };
 
   const whenLoaded = (fn) => {
     const map = mapRef.current;
@@ -487,8 +529,9 @@ const Map = forwardRef(function Map(
     flyTo(lon, lat, zoom = 17) {
       const map = mapRef.current;
       if (!map) return;
-      if (reduceMotionRef.current) map.jumpTo({ center: [lon, lat], zoom });
-      else map.flyTo({ center: [lon, lat], zoom });
+      const padding = pad(0);
+      if (reduceMotionRef.current) map.jumpTo({ center: [lon, lat], zoom, padding });
+      else map.flyTo({ center: [lon, lat], zoom, padding });
     },
     resize() {
       mapRef.current?.resize();
@@ -535,8 +578,14 @@ const Map = forwardRef(function Map(
 
     map.on("click", (e) => {
       // klik w znacznik zagrożenia / wyniku nie jest klikiem w mapę
-      if (e.originalEvent?.target?.closest?.(".kbb-hazard, .kbb-pin, .kbb-stop, .maplibregl-popup")) return;
+      if (e.originalEvent?.target?.closest?.(".kbb-hazard, .kbb-pin, .kbb-stop, .kbb-signal, .maplibregl-popup")) return;
       const coords = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+
+      // tryb "zgłoś problem": klik wskazuje miejsce zgłoszenia, nie zmienia trasy
+      if (clickModeRef.current === "report") {
+        onReportClickRef.current?.(coords);
+        return;
+      }
 
       // tryb "sprawdź miejsce": klik trafia do /api/at, nie zmienia trasy
       if (clickModeRef.current === "info") {
@@ -563,6 +612,8 @@ const Map = forwardRef(function Map(
       hazardMarkers.current.forEach((m) => m.remove());
       pinMarkers.current.forEach((m) => m.remove());
       stopMarkersRef.current.forEach((m) => m.remove());
+      signalMarkersRef.current.forEach((m) => m.remove());
+      draftMarkerRef.current?.remove();
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
@@ -571,7 +622,7 @@ const Map = forwardRef(function Map(
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map) map.getCanvas().style.cursor = clickMode === "info" ? "help" : "";
+    if (map) map.getCanvas().style.cursor = clickMode === "info" ? "help" : clickMode === "report" ? "crosshair" : "";
   }, [clickMode]);
 
   useEffect(() => {
@@ -622,11 +673,13 @@ const Map = forwardRef(function Map(
         if (bounds) {
           const ne = bounds.getNorthEast();
           const sw = bounds.getSouthWest();
+          // można oddalić mapę daleko poza obszar demo (widać całe miasto i okolice), ale nie na cały świat
+          map.setMinZoom(8);
           map.setMaxBounds([
-            [sw.lng - 0.02, sw.lat - 0.02],
-            [ne.lng + 0.02, ne.lat + 0.02],
+            [sw.lng - 1.0, sw.lat - 0.7],
+            [ne.lng + 1.0, ne.lat + 0.7],
           ]);
-          if (fit) map.fitBounds(bounds, { padding: 30, maxZoom: 14, animate: !reduceMotionRef.current });
+          if (fit) map.fitBounds(bounds, { padding: pad(140), maxZoom: 12, animate: !reduceMotionRef.current });
         }
       });
     };
@@ -693,7 +746,7 @@ const Map = forwardRef(function Map(
         lastRoutesRef.current = routes;
         const selected = features.find((f) => f.properties.sel === 1) || features[0];
         const bounds = selected && boundsOf(selected);
-        if (bounds) map.fitBounds(bounds, { padding: 60, maxZoom: 17, animate: !reduceMotionRef.current });
+        if (bounds) map.fitBounds(bounds, { padding: pad(60), maxZoom: 17, animate: !reduceMotionRef.current });
       }
     });
   }, [routes, selectedRoute, points]);
@@ -749,6 +802,33 @@ const Map = forwardRef(function Map(
       stopMarkersRef.current.push(new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map));
     });
   }, [stops]);
+
+  // Zgłoszenia społeczności (pinezki "!") i miejsce właśnie zgłaszane
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    signalMarkersRef.current.forEach((m) => m.remove());
+    signalMarkersRef.current = [];
+    (signals?.features || []).slice(0, 400).forEach((f) => {
+      const props = f.properties || {};
+      const [lng, lat] = f.geometry?.coordinates || [];
+      if (typeof lng !== "number") return;
+      const el = createSignalMarker(props, props.id === activeSignalId);
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        onSignalClickRef.current?.(props.id);
+      });
+      signalMarkersRef.current.push(new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map));
+    });
+  }, [signals, activeSignalId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    draftMarkerRef.current?.remove();
+    draftMarkerRef.current = null;
+    if (draft) draftMarkerRef.current = new maplibregl.Marker({ element: createDraftMarker() }).setLngLat([draft.lng, draft.lat]).addTo(map);
+  }, [draft]);
 
   // Obrys klikniętego budynku
   useEffect(() => {

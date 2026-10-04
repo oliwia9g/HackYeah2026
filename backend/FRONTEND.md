@@ -408,3 +408,26 @@ osm_edit_url, osm_note_url   "Popraw w OpenStreetMap"
 5. Przyciski: [Trasa tutaj] (`to_place={place.id}` albo `to_lon/to_lat`), [Zgłoś dostępność] (`POST /api/reports` z `feature_id=place.id`), [Popraw w OSM].
 6. Dla budynku bez żadnych danych pokażcie wprost: "Nie mamy danych o udogodnieniach ani barierach tego budynku" – to jest poprawny, uczciwy wynik.
 **Uwagi:** zgłoszenia do budynków spoza listy miejsc (bez wpisu w `pois.geojson`) wymagają, by `feature_id` było w bazie faktów; w razie wątpliwości użyjcie `osm_edit_url`. Klik poza obszarem demo daje 200 z `inside_area:false` (nie 422). W trybie prostym (§10) pokażcie tylko: adres, 3 najważniejsze udogodnienia/bariery i "Przeczytaj" (`spoken`).
+
+
+## 18. Zgłoszenia społeczności: problem w terenie ze zdjęciem, głosy +/−, komentarze
+
+Osobne od zgłoszeń o atrybutach miejsca (`POST /api/reports`): to **punkt na mapie** (zastawiony chodnik, brak podjazdu, dziura, zepsuta winda…). Zgłoszenia są **zawsze niezweryfikowane**
+(chyba że moderator je zaakceptuje), **nie zmieniają tras ani danych o miejscach**, nie ma kont ani danych osobowych.
+
+| Endpoint | Co robi |
+|---|---|
+| `GET /api/signals/categories` | rodzaje problemów i limity do formularza |
+| `GET /api/signals` | wszystkie widoczne zgłoszenia jako GeoJSON (`properties`: `id`, `category_label`, `description`, `has_photo`, `up`, `down`, `comments_count`, `status`, `questioned`, `demo`) |
+| `POST /api/signals` | `{lon, lat, category, description, photo?, photo_alt?}`; `photo` = JPEG jako base64; poza obszarem demo 422; limit 5 zgłoszeń/h (429) |
+| `GET /api/signals/{id}` | szczegóły: komentarze, `photo_url`, `photo_alt`, `my_vote` |
+| `GET /api/signals/{id}/photo` | zdjęcie (`image/jpeg`, `nosniff`) |
+| `POST /api/signals/{id}/vote` | `{value: "up"\|"down"\|"none"}`; jeden głos na urządzenie, można zmienić lub cofnąć |
+| `POST /api/signals/{id}/comments` | `{text}` (2–300 znaków), limit 15/h |
+| `GET/POST /api/admin/signals…` | moderacja (nagłówek `X-Admin-Token`): ukrycie zgłoszenia lub komentarza, oznaczenie „sprawdzone” |
+
+**Zdjęcia:** przyjmujemy tylko JPEG do 2 MB; serwer **wycina EXIF** (GPS, model telefonu) i inne metadane, zapisuje pod własną nazwą. Front zmniejsza zdjęcie do ok. 1280 px przed wysłaniem.
+Zdjęcia są publiczne: formularz ostrzega, żeby nie fotografować twarzy i tablic rejestracyjnych; moderator może ukryć zgłoszenie.
+**Głosy** liczymy raz na urządzenie (adres w pamięci procesu, nie zapisujemy go); po restarcie serwera to samo urządzenie mogłoby zagłosować ponownie. To uczciwe uproszczenie na etapie pilotażu.
+`questioned: true` (≥ 3 głosy „−” i więcej niż „+”) front pokazuje jako „Wątpliwe: wielu użytkowników uważa, że nieaktualne”.
+Przy `HACKYEAH_SEED=1` powstają 3 zgłoszenia oznaczone „PRZYKŁADOWE - dane demo”.

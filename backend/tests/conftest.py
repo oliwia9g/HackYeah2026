@@ -88,7 +88,7 @@ def make_client(net, surveys=None, geocoder=None, buildings=None, extra_facts=No
     # testy sa hermetyczne: bez prawdziwych plikow z data/raw (rozklad, adresy) i bez sieci (GTFS-RT)
     def no_network(name):
         raise RuntimeError("brak sieci w testach")
-    app = create_app(net=net, pois_geojson=pois, facts=facts, cfg=load_config(), reports_path=tmp / "reports.json",
+    app = create_app(net=net, pois_geojson=pois, facts=facts, cfg=load_config(), reports_path=tmp / "reports.json", signals_path=tmp / "signals.json", photos_dir=tmp / "photos",
                      transit=transit or Transit(None), geocoder=geocoder or Geocoder(None), realtime=Realtime(no_network),
                      surveys=surveys or Surveys(None), buildings=buildings or Buildings(None))
     return TestClient(app)
